@@ -1,6 +1,19 @@
-import React, { useContext, useEffect } from 'react';
+import React, { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  FaBook,
+  FaChalkboardTeacher,
+  FaClipboardList,
+  FaComments,
+  FaGraduationCap,
+  FaHome,
+  FaListAlt,
+  FaSignOutAlt,
+  FaTasks,
+  FaUserCircle
+} from 'react-icons/fa';
 import { AuthContext } from '../context/AuthContext';
+import styles from '../styles/inlineStyles';
 
 const Navigation = () => {
   const { user, logout } = useContext(AuthContext);
@@ -11,69 +24,83 @@ const Navigation = () => {
     navigate('/login');
   };
 
+  const navActionStyle = {
+    ...styles.navLink,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    font: 'inherit'
+  };
+
   return (
-    <nav style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 20px' }}>
-      <div>
-        <h2 style={{ margin: 0, cursor: 'pointer', fontSize: '20px' }} onClick={() => navigate('/dashboard')}>
-          📚 ITPM
+    <nav style={styles.nav}>
+      <div style={styles.navInner}>
+        <h2
+          style={{ margin: 0, cursor: 'pointer', fontSize: '20px', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+          onClick={() => navigate('/dashboard')}
+        >
+          <FaGraduationCap /> Learn bridge
         </h2>
-      </div>
 
       <div style={{ display: 'flex', gap: '20px', alignItems: 'center', flexWrap: 'wrap' }}>
         {user && (
           <>
-            <a onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
-              Home
-            </a>
+            <button type="button" onClick={() => navigate('/dashboard')} style={navActionStyle}>
+              <FaHome /> Home
+            </button>
 
             {user.role === 'student' && (
               <>
-                <a onClick={() => navigate('/study-planner')} style={{ cursor: 'pointer' }}>
-                  Planner
-                </a>
-                <a onClick={() => navigate('/materials')} style={{ cursor: 'pointer' }}>
-                  Materials
-                </a>
-                <a onClick={() => navigate('/questions')} style={{ cursor: 'pointer' }}>
-                  Q&A
-                </a>
-                <a onClick={() => navigate('/mcq')} style={{ cursor: 'pointer' }}>
-                  MCQ
-                </a>
-                <a onClick={() => navigate('/appointments')} style={{ cursor: 'pointer' }}>
-                  Sessions
-                </a>
-                <a onClick={() => navigate('/progress')} style={{ cursor: 'pointer' }}>
-                  Progress
-                </a>
+                <button type="button" onClick={() => navigate('/study-planner')} style={navActionStyle}>
+                  <FaTasks /> Planner
+                </button>
+                <button type="button" onClick={() => navigate('/materials')} style={navActionStyle}>
+                  <FaBook /> Materials
+                </button>
+                <button type="button" onClick={() => navigate('/questions')} style={navActionStyle}>
+                  <FaComments /> Q&A
+                </button>
+                <button type="button" onClick={() => navigate('/mcq')} style={navActionStyle}>
+                  <FaClipboardList /> MCQ
+                </button>
+                <button type="button" onClick={() => navigate('/appointments')} style={navActionStyle}>
+                  <FaChalkboardTeacher /> Sessions
+                </button>
+                <button type="button" onClick={() => navigate('/progress')} style={navActionStyle}>
+                  <FaListAlt /> Progress
+                </button>
               </>
             )}
 
             {user.role === 'tutor' && (
               <>
-                <a onClick={() => navigate('/subjects')} style={{ cursor: 'pointer' }}>
-                  Subjects
-                </a>
-                <a onClick={() => navigate('/materials')} style={{ cursor: 'pointer' }}>
-                  Materials
-                </a>
-                <a onClick={() => navigate('/questions')} style={{ cursor: 'pointer' }}>
-                  Q&A
-                </a>
-                <a onClick={() => navigate('/sessions')} style={{ cursor: 'pointer' }}>
-                  Sessions
-                </a>
+                <button type="button" onClick={() => navigate('/subjects')} style={navActionStyle}>
+                  <FaListAlt /> Subjects
+                </button>
+                <button type="button" onClick={() => navigate('/materials')} style={navActionStyle}>
+                  <FaBook /> Materials
+                </button>
+                <button type="button" onClick={() => navigate('/questions')} style={navActionStyle}>
+                  <FaComments /> Q&A
+                </button>
+                <button type="button" onClick={() => navigate('/sessions')} style={navActionStyle}>
+                  <FaChalkboardTeacher /> Sessions
+                </button>
               </>
             )}
 
-            <a onClick={() => navigate('/profile')} style={{ cursor: 'pointer' }}>
-              {user.name}
-            </a>
-            <button onClick={handleLogout} style={{ padding: '8px 15px', background: '#d32f2f' }}>
-              Logout
+            <button type="button" onClick={() => navigate('/profile')} style={navActionStyle}>
+              <FaUserCircle /> {user.name}
+            </button>
+            <button onClick={handleLogout} style={{ ...styles.buttonDanger, padding: '8px 16px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><FaSignOutAlt /> Logout</span>
             </button>
           </>
         )}
+      </div>
       </div>
     </nav>
   );

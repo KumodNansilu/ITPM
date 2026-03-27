@@ -3,7 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { authService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
-import { toast } from 'react-toastify';
+import { showError, showSuccess } from '../utils/alerts';
+import AuthIllustration from '../components/Illustrations/AuthIllustration';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -19,20 +20,42 @@ const Login = () => {
     try {
       const response = await authService.login({ email, password });
       login(response.data.user, response.data.token);
-      toast.success('Login successful!');
+      showSuccess('Login successful!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Login failed');
+      showError(error.response?.data?.message || 'Login failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px' }}>
-      <div style={styles.card}>
-        <h1 style={{ textAlign: 'center', marginBottom: '30px' }}>Login</h1>
-        <form onSubmit={handleSubmit}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px 20px'
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '1100px',
+          display: 'flex',
+          gap: '22px',
+          alignItems: 'stretch',
+          flexWrap: 'wrap'
+        }}
+      >
+        <div style={{ flex: '1 1 420px' }}>
+          <div style={{ ...styles.card, padding: '28px' }}>
+            <h1 style={{ margin: 0, marginBottom: '8px' }}>Welcome back</h1>
+            <p style={{ margin: 0, color: 'rgba(11,31,59,0.7)', marginBottom: '26px' }}>
+              Sign in to continue your learning journey.
+            </p>
+            <form onSubmit={handleSubmit}>
           <label style={styles.label}>Email</label>
           <input
             type="email"
@@ -54,11 +77,65 @@ const Login = () => {
           <button type="submit" disabled={loading} style={{ ...styles.button, width: '100%' }}>
             {loading ? 'Logging in...' : 'Login'}
           </button>
-        </form>
+            </form>
 
-        <p style={{ textAlign: 'center', marginTop: '20px' }}>
-          Don't have an account? <Link to="/register">Register here</Link>
-        </p>
+            <p style={{ textAlign: 'center', marginTop: '20px', marginBottom: 0 }}>
+              Don&apos;t have an account?{' '}
+              <Link to="/register" style={{ color: '#1e40af', fontWeight: 700 }}>
+                Create one
+              </Link>
+            </p>
+          </div>
+        </div>
+
+        <div
+          style={{
+            flex: '1 1 360px',
+            minWidth: '280px',
+            borderRadius: '18px',
+            border: '1px solid rgba(255,255,255,0.55)',
+            background: 'linear-gradient(135deg, rgba(11,31,59,0.10) 0%, rgba(30,58,138,0.10) 100%)',
+            boxShadow: '0 20px 60px rgba(2, 6, 23, 0.12)',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div
+              style={{
+                padding: '18px 18px 0 18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontWeight: 800,
+                  color: '#0b1f3b'
+                }}
+              >
+                <span
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '999px',
+                    background: 'linear-gradient(135deg, #1e3a8a, #0b1f3b)'
+                  }}
+                />
+                Learn smarter
+              </span>
+            </div>
+
+            <AuthIllustration />
+
+            <div style={{ padding: '0 18px 18px 18px', color: 'rgba(11,31,59,0.7)' }}>
+              Study planner, materials, and progress tracking — all in one place.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

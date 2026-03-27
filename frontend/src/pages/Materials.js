@@ -1,19 +1,59 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { materialService, subjectService } from '../services/api';
-import { toast } from 'react-toastify';
 import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess } from '../utils/alerts';
+import { FaBookOpen, FaDownload, FaLayerGroup } from 'react-icons/fa';
 
 const Materials = () => {
   const [materials, setMaterials] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [selectedSubject, setSelectedSubject] = useState('');
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [selectedSemester, setSelectedSemester] = useState(null);
+  const [selectedStudentSubjectId, setSelectedStudentSubjectId] = useState('');
   
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadForm, setUploadForm] = useState({ title: '', description: '', subject: '' });
   const [file, setFile] = useState(null);
+  const [thumbnailFile, setThumbnailFile] = useState(null);
   const { user } = useContext(AuthContext);
+  const apiBaseUrl = 'http://localhost:5000';
+
+  const resolveUploadUrl = (url) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    return `${apiBaseUrl}${url}`;
+  };
+
+  const materialCountBySubject = useMemo(() => {
+    const counts = {};
+    (materials || []).forEach((material) => {
+      const subjectId = material?.subject?._id;
+      if (!subjectId) return;
+      const key = String(subjectId);
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [materials]);
+
+  const subjectsForSelectedYearSemester = useMemo(() => {
+    if (!selectedYear || !selectedSemester) return [];
+
+    return (subjects || [])
+      .filter((subject) => Number(subject.year) === selectedYear && Number(subject.semester) === selectedSemester)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [subjects, selectedYear, selectedSemester]);
+
+  const selectedStudentSubject = useMemo(() => {
+    return (subjects || []).find((subject) => String(subject._id) === String(selectedStudentSubjectId));
+  }, [subjects, selectedStudentSubjectId]);
+
+  const documentsForSelectedStudentSubject = useMemo(() => {
+    if (!selectedStudentSubjectId) return [];
+    return (materials || []).filter((material) => String(material?.subject?._id) === String(selectedStudentSubjectId));
+  }, [materials, selectedStudentSubjectId]);
 
   useEffect(() => {
     fetchMaterials();
@@ -29,7 +69,7 @@ const Materials = () => {
         : response.data;
       setMaterials(filtered);
     } catch (error) {
-      toast.error('Failed to fetch materials');
+      showError('Failed to fetch materials');
     } finally {
       setLoading(false);
     }
@@ -40,7 +80,7 @@ const Materials = () => {
       const response = await subjectService.getAllSubjects();
       setSubjects(response.data);
     } catch (error) {
-      toast.error('Failed to fetch subjects');
+      showError('Failed to fetch subjects');
     }
   };
 
@@ -57,7 +97,7 @@ const Materials = () => {
       link.click();
       link.parentElement.removeChild(link);
     } catch (error) {
-      toast.error('Failed to download material');
+      showError('Failed to download material');
     }
   };
 
@@ -65,7 +105,7 @@ const Materials = () => {
     e.preventDefault();
 
     if (!file) {
-      toast.error('Please select a file to upload');
+      showError('Please select a file to upload');
       return;
     }
 
@@ -75,16 +115,20 @@ const Materials = () => {
       fd.append('title', uploadForm.title);
       fd.append('description', uploadForm.description);
       fd.append('subject', uploadForm.subject);
+      if (thumbnailFile) {
+        fd.append('thumbnail', thumbnailFile);
+      }
       // no topic field — upload at subject level
 
       await materialService.uploadMaterial(fd);
-      toast.success('Material uploaded');
+      showSuccess('Material uploaded');
       setShowUpload(false);
       setUploadForm({ title: '', description: '', subject: '' });
       setFile(null);
+      setThumbnailFile(null);
       fetchMaterials();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to upload material');
+      showError(error.response?.data?.message || 'Failed to upload material');
     }
   };
 
@@ -102,9 +146,20 @@ const Materials = () => {
   }
 
   const tutorSubjects = user?.role === 'tutor' ? subjects.filter(s => s.createdBy && (s.createdBy._id === user.id || s.createdBy._id === user._id)) : [];
+  const isStudent = user?.role === 'student';
+  const totalDownloads = (materials || []).reduce((sum, material) => sum + (material.downloads || 0), 0);
 
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>Study Materials</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Find, upload, and download resources in one organized place.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaBookOpen /> Materials: <strong>{materials.length}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaLayerGroup /> Subjects: <strong>{subjects.length}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaDownload /> Downloads: <strong>{totalDownloads}</strong></div>
+      </div>
       <h1 style={{ marginBottom: '30px' }}>Study Materials</h1>
 
       {user?.role === 'tutor' && (
@@ -136,6 +191,9 @@ const Materials = () => {
                 <label style={styles.label}>File (PDF)</label>
                 <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files[0])} style={styles.input} />
 
+                <label style={styles.label}>Thumbnail (Optional)</label>
+                <input type="file" accept="image/*" onChange={(e) => setThumbnailFile(e.target.files?.[0] || null)} style={styles.input} />
+
                 <button type="submit" style={{ ...styles.button, marginTop: '10px' }}>Upload</button>
               </form>
             </div>
@@ -143,42 +201,205 @@ const Materials = () => {
         </div>
       )}
 
-      <div style={{ ...styles.card, marginBottom: '30px' }}>
-        <label style={styles.label}>Filter by Subject</label>
-        <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)} style={styles.input}>
-          <option value="">All Subjects</option>
-          {subjects.map(subject => (
-            <option key={subject._id} value={subject._id}>
-              {subject.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {!isStudent && (
+        <div style={{ ...styles.card, marginBottom: '30px' }}>
+          <label style={styles.label}>Filter by Subject</label>
+          <select value={selectedSubject} onChange={(e) => setSelectedSubject(e.target.value)} style={styles.input}>
+            <option value="">All Subjects</option>
+            {subjects.map(subject => (
+              <option key={subject._id} value={subject._id}>
+                {subject.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      <div style={{ display: 'grid', gap: '15px' }}>
-        {materials && materials.map(material => (
-          <div key={material._id} style={styles.card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-              <div style={{ flex: 1 }}>
-                <h3>{material.title}</h3>
-                <p><strong>Subject:</strong> {material.subject.name}</p>
-                <p><strong>Topic:</strong> {material.topic?.name || '—'}</p>
-                <p><strong>File Type:</strong> {material.fileType.toUpperCase()}</p>
-                <p><strong>Uploaded by:</strong> {material.uploadedBy.name}</p>
-                <p><strong>Downloads:</strong> {material.downloads}</p>
-                {material.description && <p>{material.description}</p>}
+      {isStudent ? (
+        <div>
+          {!selectedYear && (
+            <div style={styles.card}>
+              <h2 style={{ marginBottom: '16px' }}>Select Academic Year</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px' }}>
+                {[1, 2, 3, 4].map((year) => (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => {
+                      setSelectedYear(year);
+                      setSelectedSemester(null);
+                      setSelectedStudentSubjectId('');
+                    }}
+                    style={{ ...styles.card, marginBottom: 0, cursor: 'pointer', border: '2px solid #667eea', textAlign: 'center' }}
+                  >
+                    <h3 style={{ marginBottom: '6px' }}>Year {year}</h3>
+                  </button>
+                ))}
               </div>
-              <button onClick={() => handleDownload(material._id, material.fileName)} style={styles.button}>
-                ⬇️ Download
-              </button>
             </div>
-          </div>
-        ))}
-      </div>
+          )}
 
-      {materials.length === 0 && (
-        <div style={styles.alertInfo}>
-          No materials found. Check back later!
+          {selectedYear && !selectedSemester && (
+            <div style={styles.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0 }}>Year {selectedYear} - Select Semester</h2>
+                <button
+                  type="button"
+                  style={styles.buttonDanger}
+                  onClick={() => {
+                    setSelectedYear(null);
+                    setSelectedSemester(null);
+                    setSelectedStudentSubjectId('');
+                  }}
+                >
+                  Back
+                </button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px' }}>
+                {[1, 2].map((semester) => (
+                  <button
+                    key={semester}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSemester(semester);
+                      setSelectedStudentSubjectId('');
+                    }}
+                    style={{ ...styles.card, marginBottom: 0, cursor: 'pointer', border: '2px solid #764ba2', textAlign: 'center' }}
+                  >
+                    <h3 style={{ marginBottom: '6px' }}>Semester {semester}</h3>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {selectedYear && selectedSemester && !selectedStudentSubjectId && (
+            <div style={styles.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0 }}>Year {selectedYear} - Semester {selectedSemester} - Subjects</h2>
+                <button
+                  type="button"
+                  style={styles.buttonDanger}
+                  onClick={() => {
+                    setSelectedSemester(null);
+                    setSelectedStudentSubjectId('');
+                  }}
+                >
+                  Back
+                </button>
+              </div>
+
+              {subjectsForSelectedYearSemester.length === 0 ? (
+                <div style={styles.alertInfo}>No subjects found for this year and semester.</div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '15px' }}>
+                  {subjectsForSelectedYearSemester.map((subject) => {
+                    const docCount = materialCountBySubject[String(subject._id)] || 0;
+                    return (
+                      <button
+                        key={subject._id}
+                        type="button"
+                        onClick={() => setSelectedStudentSubjectId(subject._id)}
+                        style={{ ...styles.card, marginBottom: 0, cursor: 'pointer', border: '1px solid #ddd', textAlign: 'left' }}
+                      >
+                        <h3 style={{ marginBottom: '6px' }}>{subject.name}</h3>
+                        <p style={{ margin: 0, color: '#555' }}>{subject.code}</p>
+                        <p style={{ marginTop: '8px', color: '#1a73e8', fontWeight: 600 }}>{docCount} document(s)</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedStudentSubjectId && (
+            <div style={styles.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0 }}>
+                  {selectedStudentSubject?.name || 'Subject'} Documents
+                </h2>
+                <button
+                  type="button"
+                  style={styles.buttonDanger}
+                  onClick={() => setSelectedStudentSubjectId('')}
+                >
+                  Back to Subjects
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gap: '15px' }}>
+                {documentsForSelectedStudentSubject.map((material) => (
+                  <div key={material._id} style={styles.card}>
+                    {material.thumbnailUrl && (
+                      <img
+                        src={resolveUploadUrl(material.thumbnailUrl)}
+                        alt={`${material.title} thumbnail`}
+                        style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }}
+                      />
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                      <div style={{ flex: 1 }}>
+                        <h3>{material.title}</h3>
+                        <p><strong>Topic:</strong> {material.topic?.name || '—'}</p>
+                        <p><strong>File Type:</strong> {material.fileType.toUpperCase()}</p>
+                        <p><strong>Uploaded by:</strong> {material.uploadedBy.name}</p>
+                        <p><strong>Downloads:</strong> {material.downloads}</p>
+                        {material.description && <p>{material.description}</p>}
+                      </div>
+                      <button onClick={() => handleDownload(material._id, material.fileName)} style={styles.button}>
+                        Download
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {documentsForSelectedStudentSubject.length === 0 && (
+                <div style={styles.alertInfo}>No documents available for this subject yet.</div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: '15px' }}>
+          {materials && materials.map(material => (
+            <div key={material._id} style={styles.card}>
+              {material.thumbnailUrl && (
+                <img
+                  src={resolveUploadUrl(material.thumbnailUrl)}
+                  alt={`${material.title} thumbnail`}
+                  style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }}
+                />
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                <div style={{ flex: 1 }}>
+                  <h3>{material.title}</h3>
+                  <p><strong>Subject:</strong> {material.subject.name}</p>
+                  <p><strong>Topic:</strong> {material.topic?.name || '—'}</p>
+                  <p><strong>File Type:</strong> {material.fileType.toUpperCase()}</p>
+                  <p><strong>Uploaded by:</strong> {material.uploadedBy.name}</p>
+                  <p><strong>Downloads:</strong> {material.downloads}</p>
+                  {material.description && <p>{material.description}</p>}
+                </div>
+                <button onClick={() => handleDownload(material._id, material.fileName)} style={styles.button}>
+                  Download
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isStudent && materials.length === 0 && (
+        <div style={{ ...styles.card, textAlign: 'center' }}>
+          <h3 style={{ marginTop: 0 }}>No materials found</h3>
+          <p style={{ color: 'rgba(11,31,59,0.7)' }}>
+            {user?.role === 'tutor' ? 'Upload your first material to help students learn faster.' : 'Check back later for new study resources.'}
+          </p>
+          {user?.role === 'tutor' && (
+            <button type="button" onClick={() => setShowUpload(true)} style={styles.button}>Upload First Material</button>
+          )}
         </div>
       )}
     </div>

@@ -1,8 +1,15 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { planService, subjectService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
-import { toast } from 'react-toastify';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess, confirmDialog } from '../utils/alerts';
+import { FaCalendarAlt, FaCheckCircle, FaClock } from 'react-icons/fa';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  success: (message) => showSuccess(message),
+  error: (message) => showError(message)
+};
 
 const StudyPlanner = () => {
   const [plans, setPlans] = useState([]);
@@ -73,7 +80,13 @@ const StudyPlanner = () => {
   };
 
   const handleDeletePlan = async (planId) => {
-    if (window.confirm('Are you sure you want to delete this plan?')) {
+    const confirmed = await confirmDialog({
+      title: 'Delete this plan?',
+      text: 'This action cannot be undone.',
+      icon: 'warning',
+      confirmButtonText: 'Yes, delete'
+    });
+    if (confirmed) {
       try {
         await planService.deletePlan(planId);
         toast.success('Plan deleted');
@@ -129,8 +142,21 @@ const StudyPlanner = () => {
     );
   }
 
+  const pendingCount = plans.filter((plan) => plan.status === 'pending').length;
+  const completedCount = plans.filter((plan) => plan.status === 'completed').length;
+  const upcomingCount = plans.filter((plan) => new Date(plan.plannedDate) > new Date()).length;
+
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>Study Planner</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Plan sessions, stay consistent, and track what you complete.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaClock /> Pending: <strong>{pendingCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCheckCircle /> Completed: <strong>{completedCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCalendarAlt /> Upcoming: <strong>{upcomingCount}</strong></div>
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <h1>Study Planner</h1>
         <button onClick={() => setShowForm(!showForm)} style={styles.button}>
@@ -232,8 +258,10 @@ const StudyPlanner = () => {
       </div>
 
       {plans.length === 0 && (
-        <div style={styles.alertInfo}>
-          No study plans yet. Create one to get started!
+        <div style={{ ...styles.card, textAlign: 'center' }}>
+          <h3 style={{ marginTop: 0 }}>No study plans yet</h3>
+          <p style={{ color: 'rgba(11,31,59,0.7)' }}>Create your first plan to build a clear weekly routine.</p>
+          <button type="button" onClick={() => setShowForm(true)} style={styles.button}>Create First Plan</button>
         </div>
       )}
     </div>

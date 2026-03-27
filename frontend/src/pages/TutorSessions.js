@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { appointmentService, subjectService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
-import { toast } from 'react-toastify';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess, confirmDialog } from '../utils/alerts';
+import { FaCalendarAlt, FaPlusCircle, FaUsers } from 'react-icons/fa';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  success: (message) => showSuccess(message),
+  error: (message) => showError(message)
+};
 
 const TutorSessions = () => {
   const { user } = useContext(AuthContext);
@@ -14,6 +21,7 @@ const TutorSessions = () => {
   const [topics, setTopics] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [sessionStudents, setSessionStudents] = useState([]);
+  const [thumbnailFile, setThumbnailFile] = useState(null);
   
   const [createForm, setCreateForm] = useState({
     subject: '',
@@ -105,7 +113,15 @@ const TutorSessions = () => {
       if (createForm.meetingLink) payload.meetingLink = createForm.meetingLink;
       if (createForm.description) payload.description = createForm.description;
 
-      await appointmentService.createTutorSession(payload);
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        formData.append(key, value);
+      });
+      if (thumbnailFile) {
+        formData.append('thumbnail', thumbnailFile);
+      }
+
+      await appointmentService.createTutorSession(formData);
 
       toast.success('Session created successfully!');
       setCreateForm({
@@ -118,6 +134,7 @@ const TutorSessions = () => {
         meetingLink: '',
         description: ''
       });
+      setThumbnailFile(null);
       setActiveTab('sessions');
       fetchTutorSessions();
     } catch (error) {
@@ -179,7 +196,13 @@ const TutorSessions = () => {
   };
 
   const handleCancelSession = async () => {
-    if (!window.confirm('This will cancel all student bookings. Continue?')) return;
+    const confirmed = await confirmDialog({
+      title: 'Cancel session?',
+      text: 'This will cancel all student bookings. Continue?',
+      icon: 'warning',
+      confirmButtonText: 'Yes, cancel'
+    });
+    if (!confirmed) return;
 
     try {
       await appointmentService.cancelTutorSession(selectedSession._id);
@@ -203,7 +226,13 @@ const TutorSessions = () => {
   };
 
   const handleRemoveStudent = async (appointmentId) => {
-    if (!window.confirm('Remove this student from the session?')) return;
+    const confirmed = await confirmDialog({
+      title: 'Remove student?',
+      text: 'This will remove this student from the session.',
+      icon: 'warning',
+      confirmButtonText: 'Yes, remove'
+    });
+    if (!confirmed) return;
 
     try {
       await appointmentService.removeStudentFromSession(selectedSession._id, appointmentId);
@@ -249,6 +278,10 @@ const TutorSessions = () => {
   if (selectedSession) {
     return (
       <div style={{ ...styles.container, marginTop: '30px' }}>
+        <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+          <h1 style={{ margin: 0, marginBottom: '6px' }}>Session Details</h1>
+          <p style={{ margin: 0, opacity: 0.9 }}>Manage timing, attendance, and student participation for this session.</p>
+        </div>
         <button
           onClick={() => setSelectedSession(null)}
           style={{ ...styles.button, marginBottom: '20px', background: '#999' }}
@@ -258,6 +291,19 @@ const TutorSessions = () => {
 
         <div style={styles.card}>
           <h2>Session Details</h2>
+          {selectedSession.thumbnailUrl && (
+            <img
+              src={`http://localhost:5000${selectedSession.thumbnailUrl}`}
+              alt="Session thumbnail"
+              style={{
+                width: '100%',
+                height: '220px',
+                objectFit: 'cover',
+                borderRadius: '8px',
+                marginBottom: '15px'
+              }}
+            />
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
             <div>
               <p><strong>Module:</strong> {selectedSession.subject?.name}</p>
@@ -386,6 +432,15 @@ const TutorSessions = () => {
 
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>Manage Sessions</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Create classes, adjust schedules, and monitor student bookings.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCalendarAlt /> Total sessions: <strong>{sessions.length}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaUsers /> Scheduled: <strong>{sessions.filter((s) => s.status === 'scheduled').length}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaPlusCircle /> Subjects: <strong>{subjects.length}</strong></div>
+      </div>
       <h1 style={{ marginBottom: '30px' }}>📅 Manage Sessions</h1>
 
       {/* Tabs */}
@@ -417,8 +472,10 @@ const TutorSessions = () => {
       {activeTab === 'sessions' && (
         <div style={{ display: 'grid', gap: '15px' }}>
           {sessions.length === 0 && (
-            <div style={styles.alertInfo}>
-              You haven't created any sessions yet. Create one to get started!
+            <div style={{ ...styles.card, textAlign: 'center' }}>
+              <h3 style={{ marginTop: 0 }}>No sessions yet</h3>
+              <p style={{ color: 'rgba(11,31,59,0.72)' }}>Create your first tutor session to start accepting bookings.</p>
+              <button type="button" onClick={() => setActiveTab('create')} style={styles.button}>Create First Session</button>
             </div>
           )}
 
@@ -436,6 +493,19 @@ const TutorSessions = () => {
               onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)'}
               onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'}
             >
+              {session.thumbnailUrl && (
+                <img
+                  src={`http://localhost:5000${session.thumbnailUrl}`}
+                  alt="Session thumbnail"
+                  style={{
+                    width: '100%',
+                    height: '180px',
+                    objectFit: 'cover',
+                    borderRadius: '8px',
+                    marginBottom: '12px'
+                  }}
+                />
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
                 <div>
                   <h3>{session.subject?.name}</h3>
@@ -561,6 +631,16 @@ const TutorSessions = () => {
                   value={createForm.meetingLink}
                   onChange={(e) => setCreateForm(p => ({ ...p, meetingLink: e.target.value }))}
                   placeholder="https://..."
+                />
+              </div>
+
+              <div>
+                <label style={styles.label}>Session Thumbnail (Image)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={styles.input}
+                  onChange={(e) => setThumbnailFile(e.target.files?.[0] || null)}
                 />
               </div>
             </div>
