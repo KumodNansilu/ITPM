@@ -1,8 +1,15 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { userService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
-import { toast } from 'react-toastify';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess } from '../utils/alerts';
+import { FaEnvelope, FaIdBadge, FaUserCircle } from 'react-icons/fa';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  success: (message) => showSuccess(message),
+  error: (message) => showError(message)
+};
 
 const Profile = () => {
   const { user } = useContext(AuthContext);
@@ -38,7 +45,16 @@ const Profile = () => {
   };
 
   return (
-    <div style={{ ...styles.container, marginTop: '30px', maxWidth: '600px' }}>
+    <div style={{ ...styles.container, marginTop: '30px', maxWidth: '900px' }}>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>My Profile</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Manage your identity and account details in one place.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaUserCircle /> Name: <strong>{profileData.name || 'N/A'}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaEnvelope /> Email: <strong>{profileData.email || 'N/A'}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaIdBadge /> Role: <strong>{user?.role || 'N/A'}</strong></div>
+      </div>
       <h1 style={{ marginBottom: '30px' }}>My Profile</h1>
 
       <div style={styles.card}>

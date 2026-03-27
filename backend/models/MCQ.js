@@ -13,7 +13,7 @@ const mcqSchema = new mongoose.Schema({
   topic: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Topic',
-    required: true
+    default: null
   },
   options: [{
     text: String,

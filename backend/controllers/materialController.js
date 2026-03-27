@@ -7,8 +7,15 @@ const path = require('path');
 // Upload Study Material
 exports.uploadMaterial = async (req, res) => {
   try {
-    if (!req.file) {
+    const uploadedFile = req.file || (req.files?.file ? req.files.file[0] : null);
+    const thumbnailFile = req.files?.thumbnail ? req.files.thumbnail[0] : null;
+
+    if (!uploadedFile) {
       return res.status(400).json({ message: 'No file provided' });
+    }
+
+    if (thumbnailFile && !thumbnailFile.mimetype.startsWith('image/')) {
+      return res.status(400).json({ message: 'Thumbnail must be an image file' });
     }
 
     const { subject, topic, title, description } = req.body;
@@ -17,10 +24,11 @@ exports.uploadMaterial = async (req, res) => {
       title,
       description,
       subject,
-      fileUrl: `/uploads/${req.file.filename}`,
-      fileName: req.file.originalname,
-      fileType: req.file.mimetype.split('/')[1],
-      fileSize: req.file.size,
+      thumbnailUrl: thumbnailFile ? `/uploads/${thumbnailFile.filename}` : '',
+      fileUrl: `/uploads/${uploadedFile.filename}`,
+      fileName: uploadedFile.originalname,
+      fileType: uploadedFile.mimetype.split('/')[1],
+      fileSize: uploadedFile.size,
       uploadedBy: req.user.id
     };
 
@@ -46,9 +54,18 @@ exports.uploadMaterial = async (req, res) => {
     });
   } catch (error) {
     // Delete uploaded file if error occurs
-    if (req.file) {
-      fs.unlinkSync(path.join(__dirname, '../uploads/', req.file.filename));
-    }
+    const filesToCleanup = [];
+    if (req.file) filesToCleanup.push(req.file.filename);
+    if (req.files?.file?.[0]) filesToCleanup.push(req.files.file[0].filename);
+    if (req.files?.thumbnail?.[0]) filesToCleanup.push(req.files.thumbnail[0].filename);
+
+    filesToCleanup.forEach((fileName) => {
+      const fullPath = path.join(__dirname, '../uploads/', fileName);
+      if (fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+      }
+    });
+
     res.status(500).json({ message: error.message });
   }
 };
@@ -115,19 +132,36 @@ exports.updateMaterial = async (req, res) => {
   try {
     const { title, description, isPublished } = req.body;
 
+    const thumbnailFile = req.files?.thumbnail ? req.files.thumbnail[0] : null;
+    if (thumbnailFile && !thumbnailFile.mimetype.startsWith('image/')) {
+      return res.status(400).json({ message: 'Thumbnail must be an image file' });
+    }
+
+    const existing = await StudyMaterial.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Material not found' });
+    }
+
+    const updateData = { updatedAt: Date.now() };
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (isPublished !== undefined) updateData.isPublished = isPublished;
+
+    if (thumbnailFile) {
+      updateData.thumbnailUrl = `/uploads/${thumbnailFile.filename}`;
+    }
+
     const material = await StudyMaterial.findByIdAndUpdate(
       req.params.id,
-      {
-        title,
-        description,
-        isPublished,
-        updatedAt: Date.now()
-      },
+      updateData,
       { new: true }
     );
 
-    if (!material) {
-      return res.status(404).json({ message: 'Material not found' });
+    if (thumbnailFile && existing.thumbnailUrl) {
+      const oldThumbnailPath = path.join(__dirname, '../' + existing.thumbnailUrl);
+      if (fs.existsSync(oldThumbnailPath)) {
+        fs.unlinkSync(oldThumbnailPath);
+      }
     }
 
     res.status(200).json({
@@ -152,6 +186,13 @@ exports.deleteMaterial = async (req, res) => {
     const filePath = path.join(__dirname, '../' + material.fileUrl);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
+    }
+
+    if (material.thumbnailUrl) {
+      const thumbnailPath = path.join(__dirname, '../' + material.thumbnailUrl);
+      if (fs.existsSync(thumbnailPath)) {
+        fs.unlinkSync(thumbnailPath);
+      }
     }
 
     await StudyMaterial.findByIdAndDelete(req.params.id);

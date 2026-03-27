@@ -1,7 +1,5 @@
-import React, { useContext, useEffect } from 'react';
+import React, { useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
 
 import { AuthContext, AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -14,6 +12,7 @@ import Dashboard from './pages/Dashboard';
 import StudyPlanner from './pages/StudyPlanner';
 import Materials from './pages/Materials';
 import Questions from './pages/Questions';
+import QuestionDetails from './pages/QuestionDetails';
 import MCQ from './pages/MCQ';
 import Profile from './pages/Profile';
 import SubjectsManagement from './pages/SubjectsManagement';
@@ -42,102 +41,122 @@ const AppContent = () => {
   return (
     <>
       {isAuthenticated && <Navigation />}
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
+      <div style={isAuthenticated ? styles.pageShell : undefined}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/study-planner"
-          element={
-            <ProtectedRoute requiredRole="student">
-              <StudyPlanner />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/study-planner"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <StudyPlanner />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/materials"
-          element={
-            <ProtectedRoute>
-              <Materials />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/materials"
+            element={
+              <ProtectedRoute>
+                <Materials />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/questions"
-          element={
-            <ProtectedRoute>
-              <Questions />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/questions"
+            element={
+              <ProtectedRoute>
+                <Questions />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/mcq"
-          element={
-            <ProtectedRoute requiredRole="student">
-              <MCQ />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/questions/:questionId"
+            element={
+              <ProtectedRoute>
+                <QuestionDetails />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/mcq"
+            element={
+              <ProtectedRoute>
+                <MCQ />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/subjects"
-          element={
-            <ProtectedRoute requiredRole="tutor">
-              <SubjectsManagement />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/mcq/create"
+            element={
+              <ProtectedRoute>
+                <MCQ />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/appointments"
-          element={
-            <ProtectedRoute requiredRole="student">
-              <StudentAppointments />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/sessions"
-          element={
-            <ProtectedRoute requiredRole="tutor">
-              <TutorSessions />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/subjects"
+            element={
+              <ProtectedRoute requiredRole="tutor">
+                <SubjectsManagement />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/progress"
-          element={
-            <ProtectedRoute requiredRole="student">
-              <ProgressTracking />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/appointments"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <StudentAppointments />
+              </ProtectedRoute>
+            }
+          />
 
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          <Route
+            path="/sessions"
+            element={
+              <ProtectedRoute requiredRole="tutor">
+                <TutorSessions />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/progress"
+            element={
+              <ProtectedRoute requiredRole="student">
+                <ProgressTracking />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </div>
     </>
   );
 };
@@ -147,7 +166,6 @@ function App() {
     <Router>
       <AuthProvider>
         <AppContent />
-        <ToastContainer position="bottom-right" autoClose={3000} />
       </AuthProvider>
     </Router>
   );

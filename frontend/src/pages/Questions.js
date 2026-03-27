@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { questionService, subjectService } from '../services/api';
-import { toast } from 'react-toastify';
 import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess, confirmDialog } from '../utils/alerts';
+import { FaCheckCircle, FaComments, FaQuestionCircle } from 'react-icons/fa';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  success: (message) => showSuccess(message),
+  error: (message) => showError(message)
+};
 
 const Questions = () => {
   const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [questions, setQuestions] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -27,6 +36,11 @@ const Questions = () => {
   const [questionEdit, setQuestionEdit] = useState({ title: '', description: '' });
   const [editingAnswerId, setEditingAnswerId] = useState(null);
   const [editingAnswerContent, setEditingAnswerContent] = useState('');
+  const [imageViewer, setImageViewer] = useState({
+    isOpen: false,
+    src: null,
+    zoom: 1
+  });
 
   useEffect(() => {
     fetchQuestions();
@@ -115,20 +129,33 @@ const Questions = () => {
     return `http://localhost:5000${imageUrl}`;
   };
 
-  const openQuestion = async (questionId) => {
-    setSelectedQuestionId(questionId);
-    setSelectedQuestion(null);
-    setAnswers([]);
-    setDetailLoading(true);
-    try {
-      const response = await questionService.getQuestionById(questionId);
-      setSelectedQuestion(response.data.question);
-      setAnswers(response.data.answers || []);
-    } catch (error) {
-      toast.error('Failed to load question');
-    } finally {
-      setDetailLoading(false);
+  const openImageViewer = (src) => {
+    if (!src) {
+      return;
     }
+    setImageViewer({ isOpen: true, src, zoom: 1 });
+  };
+
+  const closeImageViewer = () => {
+    setImageViewer({ isOpen: false, src: null, zoom: 1 });
+  };
+
+  const zoomImageViewer = (delta) => {
+    setImageViewer((prev) => {
+      const nextZoom = Math.min(5, Math.max(1, (prev.zoom || 1) + delta));
+      return { ...prev, zoom: nextZoom };
+    });
+  };
+
+  const handleViewerWheel = (e) => {
+    // Prevent the page from scrolling while zooming the image.
+    e.preventDefault();
+    const direction = e.deltaY > 0 ? -1 : 1;
+    zoomImageViewer(direction * 0.2);
+  };
+
+  const openQuestion = (questionId) => {
+    navigate(`/questions/${questionId}`);
   };
 
   const closeQuestion = () => {
@@ -190,7 +217,12 @@ const Questions = () => {
     if (!selectedQuestionId) {
       return;
     }
-    const confirmed = window.confirm('Delete this question? This will remove all answers.');
+    const confirmed = await confirmDialog({
+      title: 'Delete question?',
+      text: 'This will remove all answers.',
+      icon: 'warning',
+      confirmButtonText: 'Yes, delete'
+    });
     if (!confirmed) {
       return;
     }
@@ -232,7 +264,12 @@ const Questions = () => {
   };
 
   const handleAnswerDelete = async (answerId) => {
-    const confirmed = window.confirm('Delete this answer?');
+    const confirmed = await confirmDialog({
+      title: 'Delete answer?',
+      text: 'This action cannot be undone.',
+      icon: 'warning',
+      confirmButtonText: 'Yes, delete'
+    });
     if (!confirmed) {
       return;
     }
@@ -260,8 +297,21 @@ const Questions = () => {
     );
   }
 
+  const answeredCount = questions.filter((q) => q.status === 'answered').length;
+  const openCount = questions.length - answeredCount;
+  const totalViews = questions.reduce((sum, q) => sum + (q.views || 0), 0);
+
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>Q&A Forum</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Ask faster, answer better, and learn from the community.</p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaQuestionCircle /> Open: <strong>{openCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCheckCircle /> Answered: <strong>{answeredCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaComments /> Views: <strong>{totalViews}</strong></div>
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <h1>Q&A Forum</h1>
         <button onClick={() => setShowForm(!showForm)}>
@@ -329,7 +379,7 @@ const Questions = () => {
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: '15px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
         {questions && questions.map(question => (
           <div
             key={question._id}
@@ -342,7 +392,11 @@ const Questions = () => {
                 <img
                   src={getImageUrl(question.imageUrl)}
                   alt="Question"
-                  style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '6px', marginBottom: '10px' }}
+                  style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', background: '#f7f7fb', borderRadius: '6px', marginBottom: '10px' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openImageViewer(getImageUrl(question.imageUrl));
+                  }}
                 />
               )}
               <p>
@@ -429,7 +483,8 @@ const Questions = () => {
                 <img
                   src={getImageUrl(selectedQuestion.imageUrl)}
                   alt="Question"
-                  style={{ width: '100%', maxHeight: '320px', objectFit: 'cover', borderRadius: '6px', marginTop: '10px' }}
+                  style={{ width: '100%', maxHeight: '420px', objectFit: 'contain', background: '#f7f7fb', borderRadius: '6px', marginTop: '10px', cursor: 'zoom-in' }}
+                  onClick={() => openImageViewer(getImageUrl(selectedQuestion.imageUrl))}
                 />
               )}
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
@@ -537,8 +592,99 @@ const Questions = () => {
       )}
 
       {questions.length === 0 && (
-        <div style={styles.alertInfo}>
-          No questions yet. Be the first to ask!
+        <div style={{ ...styles.card, textAlign: 'center' }}>
+          <h3 style={{ marginTop: 0 }}>No questions yet</h3>
+          <p style={{ color: 'rgba(11,31,59,0.7)' }}>Start the discussion by asking your first question.</p>
+          <button type="button" onClick={() => setShowForm(true)} style={styles.button}>Ask First Question</button>
+        </div>
+      )}
+
+      {imageViewer.isOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={closeImageViewer}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(1100px, 100%)',
+              maxHeight: '90vh',
+              background: '#0f1220',
+              borderRadius: '10px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                padding: '10px 12px',
+                background: 'rgba(255,255,255,0.06)',
+                borderBottom: '1px solid rgba(255,255,255,0.08)'
+              }}
+            >
+              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '14px' }}>
+                Zoom: {Math.round((imageViewer.zoom || 1) * 100)}%
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => zoomImageViewer(-0.2)}>
+                  -
+                </button>
+                <button type="button" onClick={() => setImageViewer((prev) => ({ ...prev, zoom: 1 }))}>
+                  Reset
+                </button>
+                <button type="button" onClick={() => zoomImageViewer(0.2)}>
+                  +
+                </button>
+                <button type="button" onClick={closeImageViewer}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div
+              onWheel={handleViewerWheel}
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'auto',
+                padding: '18px'
+              }}
+            >
+              <img
+                src={imageViewer.src || ''}
+                alt="Full size"
+                draggable={false}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  transform: `scale(${imageViewer.zoom || 1})`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 80ms linear',
+                  background: 'transparent'
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

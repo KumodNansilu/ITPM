@@ -1,6 +1,39 @@
 const Appointment = require('../models/Appointment');
 const TutorSession = require('../models/TutorSession');
 const User = require('../models/User');
+const mongoose = require('mongoose');
+
+const recalculateTutorRating = async (tutorId) => {
+  const aggregateResult = await Appointment.aggregate([
+    {
+      $match: {
+        tutor: new mongoose.Types.ObjectId(tutorId),
+        'feedback.rating': { $exists: true, $ne: null }
+      }
+    },
+    {
+      $group: {
+        _id: '$tutor',
+        ratingTotal: { $sum: '$feedback.rating' },
+        ratingCount: { $sum: 1 }
+      }
+    }
+  ]);
+
+  const ratingSummary = aggregateResult[0] || { ratingTotal: 0, ratingCount: 0 };
+  const ratingAverage = ratingSummary.ratingCount > 0
+    ? Number((ratingSummary.ratingTotal / ratingSummary.ratingCount).toFixed(2))
+    : 0;
+
+  await User.findByIdAndUpdate(tutorId, {
+    ratingTotal: ratingSummary.ratingTotal,
+    ratingCount: ratingSummary.ratingCount,
+    ratingAverage,
+    updatedAt: Date.now()
+  });
+
+  return { ratingAverage, ratingCount: ratingSummary.ratingCount };
+};
 
 // ========== STUDENT: Book a session from available tutor sessions ==========
 
@@ -25,7 +58,7 @@ exports.getAvailableSessions = async (req, res) => {
     }
 
     const sessions = await TutorSession.find(filter)
-      .populate('tutor', 'name email specialization phone')
+      .populate('tutor', 'name email specialization phone ratingAverage ratingCount')
       .populate('subject', 'name')
       .populate('topic', 'name')
       .sort({ sessionDate: 1 });
@@ -42,10 +75,17 @@ exports.getAvailableSessions = async (req, res) => {
           ...session.toObject(),
           bookedCount,
           availableSlots: session.maxCapacity - bookedCount,
-          isFull: bookedCount >= session.maxCapacity
+          isFull: bookedCount >= session.maxCapacity,
+          slotStatus: bookedCount >= session.maxCapacity ? 'unavailable' : 'available'
         };
       })
     );
+
+    sessionsWithCapacity.sort((a, b) => {
+      const ratingDiff = (b.tutor?.ratingAverage || 0) - (a.tutor?.ratingAverage || 0);
+      if (ratingDiff !== 0) return ratingDiff;
+      return new Date(a.sessionDate) - new Date(b.sessionDate);
+    });
 
     res.status(200).json(sessionsWithCapacity);
   } catch (error) {
@@ -57,7 +97,7 @@ exports.getAvailableSessions = async (req, res) => {
 exports.getSessionDetails = async (req, res) => {
   try {
     const session = await TutorSession.findById(req.params.sessionId)
-      .populate('tutor', 'name email specialization phone')
+      .populate('tutor', 'name email specialization phone ratingAverage ratingCount')
       .populate('subject', 'name')
       .populate('topic', 'name');
 
@@ -74,7 +114,8 @@ exports.getSessionDetails = async (req, res) => {
       ...session.toObject(),
       bookedCount,
       availableSlots: session.maxCapacity - bookedCount,
-      isFull: bookedCount >= session.maxCapacity
+      isFull: bookedCount >= session.maxCapacity,
+      slotStatus: bookedCount >= session.maxCapacity ? 'unavailable' : 'available'
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -87,17 +128,6 @@ exports.bookSession = async (req, res) => {
     const { sessionId } = req.body;
     const studentId = req.user.id;
 
-    // Get the session
-    const session = await TutorSession.findById(sessionId);
-    if (!session) {
-      return res.status(404).json({ message: 'Session not found' });
-    }
-
-    // Check if session is available
-    if (!session.isAvailable || session.status !== 'scheduled') {
-      return res.status(400).json({ message: 'Session is not available' });
-    }
-
     // Check student not already booked
     const existingBooking = await Appointment.findOne({
       tutorSession: sessionId,
@@ -109,42 +139,59 @@ exports.bookSession = async (req, res) => {
       return res.status(400).json({ message: 'You already booked this session' });
     }
 
-    // Check capacity
-    const bookedCount = await Appointment.countDocuments({
-      tutorSession: sessionId,
-      status: 'booked'
-    });
+    // Atomically reserve a slot to prevent overbooking under concurrent requests.
+    const session = await TutorSession.findOneAndUpdate(
+      {
+        _id: sessionId,
+        isAvailable: true,
+        status: 'scheduled',
+        $expr: { $lt: ['$bookedCount', '$maxCapacity'] }
+      },
+      {
+        $inc: { bookedCount: 1 },
+        $set: { updatedAt: Date.now() }
+      },
+      { new: true }
+    );
 
-    if (bookedCount >= session.maxCapacity) {
+    if (!session) {
       return res.status(400).json({
-        message: 'Session is full',
+        message: 'Session is not available or already full',
         type: 'capacity_full',
-        maxCapacity: session.maxCapacity,
-        bookedCount
+        maxCapacity: null,
+        bookedCount: null
       });
     }
 
-    // Create appointment
-    const appointment = new Appointment({
-      tutorSession: sessionId,
-      student: studentId,
-      tutor: session.tutor,
-      subject: session.subject,
-      topic: session.topic,
-      scheduledDate: session.sessionDate,
-      duration: session.duration,
-      meetingLink: session.meetingLink,
-      status: 'booked'
-    });
+    let appointment;
+    try {
+      appointment = new Appointment({
+        tutorSession: sessionId,
+        student: studentId,
+        tutor: session.tutor,
+        subject: session.subject,
+        topic: session.topic,
+        scheduledDate: session.sessionDate,
+        duration: session.duration,
+        meetingLink: session.meetingLink,
+        status: 'booked'
+      });
 
-    await appointment.save();
-
-    // Update booked count
-    session.bookedCount = bookedCount + 1;
-    if (session.bookedCount >= session.maxCapacity) {
-      session.isAvailable = false;
+      await appointment.save();
+    } catch (createError) {
+      await TutorSession.findByIdAndUpdate(sessionId, {
+        $inc: { bookedCount: -1 },
+        $set: { isAvailable: true, updatedAt: Date.now() }
+      });
+      throw createError;
     }
-    await session.save();
+
+    if (session.bookedCount >= session.maxCapacity) {
+      await TutorSession.findByIdAndUpdate(sessionId, {
+        isAvailable: false,
+        updatedAt: Date.now()
+      });
+    }
 
     res.status(201).json({
       message: 'Session booked successfully',
@@ -160,9 +207,9 @@ exports.getStudentSessions = async (req, res) => {
   try {
     const appointments = await Appointment.find({
       student: req.user.id,
-      status: 'booked'
+      status: { $in: ['booked', 'completed'] }
     })
-      .populate('tutor', 'name email phone specialization')
+      .populate('tutor', 'name email phone specialization ratingAverage ratingCount')
       .populate('subject', 'name')
       .populate('topic', 'name')
       .populate('tutorSession')
@@ -242,6 +289,7 @@ exports.createSession = async (req, res) => {
     if (topic) sessionData.topic = topic;
     if (meetingLink) sessionData.meetingLink = meetingLink;
     if (description) sessionData.description = description;
+    if (req.file) sessionData.thumbnailUrl = `/uploads/${req.file.filename}`;
 
     const session = new TutorSession(sessionData);
     await session.save();
@@ -339,6 +387,7 @@ exports.updateSession = async (req, res) => {
     }
     if (meetingLink) session.meetingLink = meetingLink;
     if (description) session.description = description;
+    if (req.file) session.thumbnailUrl = `/uploads/${req.file.filename}`;
     if (status) session.status = status;
 
     session.updatedAt = Date.now();
@@ -500,6 +549,52 @@ exports.rescheduleSession = async (req, res) => {
       session,
       oldDate,
       newDate
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Student: Submit feedback for completed/past booking
+exports.submitSessionFeedback = async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const { rating, comment } = req.body;
+    const studentId = req.user.id;
+
+    const parsedRating = Number(rating);
+    if (!Number.isInteger(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+      return res.status(400).json({ message: 'Rating must be an integer between 1 and 5' });
+    }
+
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    if (appointment.student.toString() !== studentId) {
+      return res.status(403).json({ message: 'Unauthorized to submit feedback for this booking' });
+    }
+
+    const sessionHasEnded = new Date() > new Date(appointment.scheduledDate);
+    if (appointment.status !== 'completed' && !sessionHasEnded) {
+      return res.status(400).json({ message: 'Feedback can only be submitted after the session' });
+    }
+
+    appointment.feedback = {
+      rating: parsedRating,
+      comment: comment ? String(comment).trim() : '',
+      submittedAt: new Date()
+    };
+    appointment.updatedAt = Date.now();
+    await appointment.save();
+
+    const ratingSummary = await recalculateTutorRating(appointment.tutor);
+
+    res.status(200).json({
+      message: 'Feedback submitted successfully',
+      appointment,
+      tutorRating: ratingSummary
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
