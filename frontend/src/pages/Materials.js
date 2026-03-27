@@ -3,7 +3,7 @@ import { materialService, subjectService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
 import { showError, showSuccess } from '../utils/alerts';
-import { FaBookOpen, FaDownload, FaLayerGroup } from 'react-icons/fa';
+import { FaBookOpen, FaCloudUploadAlt, FaDownload, FaLayerGroup } from 'react-icons/fa';
 
 const Materials = () => {
   const [materials, setMaterials] = useState([]);
@@ -149,6 +149,34 @@ const Materials = () => {
   const isStudent = user?.role === 'student';
   const totalDownloads = (materials || []).reduce((sum, material) => sum + (material.downloads || 0), 0);
 
+  const renderMaterialCard = (material) => (
+    <div key={material._id} style={{ ...styles.card, cursor: 'default' }}>
+      {material.thumbnailUrl && (
+        <img
+          src={resolveUploadUrl(material.thumbnailUrl)}
+          alt={`${material.title} thumbnail`}
+          style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }}
+        />
+      )}
+      <h3 style={{ marginTop: 0 }}>{material.title}</h3>
+      <p style={{ marginTop: 0, color: '#475569' }}>
+        {(material.description || '').length > 140
+          ? `${material.description.substring(0, 140)}...`
+          : (material.description || 'No description available.')}
+      </p>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px', marginBottom: '12px' }}>
+        <span style={{ ...styles.badge, ...styles.badgePrimary }}>Subject: {material.subject?.name || 'N/A'}</span>
+        <span style={{ ...styles.badge, ...styles.badgePrimary }}>Type: {(material.fileType || '-').toUpperCase()}</span>
+        <span style={{ ...styles.badge, ...styles.badgePrimary }}>Downloads: {material.downloads || 0}</span>
+      </div>
+      <p style={{ marginTop: 0, marginBottom: '8px', color: '#334155' }}><strong>Topic:</strong> {material.topic?.name || '—'}</p>
+      <p style={{ marginTop: 0, marginBottom: '14px', color: '#334155' }}><strong>Uploaded by:</strong> {material.uploadedBy?.name || 'Unknown'}</p>
+      <button onClick={() => handleDownload(material._id, material.fileName)} style={styles.button}>
+        Download
+      </button>
+    </div>
+  );
+
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
       <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
@@ -160,17 +188,22 @@ const Materials = () => {
         <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaLayerGroup /> Subjects: <strong>{subjects.length}</strong></div>
         <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaDownload /> Downloads: <strong>{totalDownloads}</strong></div>
       </div>
-      <h1 style={{ marginBottom: '30px' }}>Study Materials</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <h1 style={{ margin: 0 }}>Study Materials</h1>
+        {user?.role === 'tutor' && (
+          <button style={styles.button} onClick={() => setShowUpload(!showUpload)}>
+            {showUpload ? 'Cancel' : '+ Upload Material'}
+          </button>
+        )}
+      </div>
 
       {user?.role === 'tutor' && (
         <div style={{ marginBottom: '20px' }}>
-          <button style={styles.button} onClick={() => setShowUpload(!showUpload)}>
-            {showUpload ? 'Cancel Upload' : 'Upload Material'}
-          </button>
-
           {showUpload && (
-            <div style={{ ...styles.card, marginTop: '15px' }}>
-              <h3>Upload Material (PDF)</h3>
+            <div style={{ ...styles.card, marginTop: 0, marginBottom: '30px' }}>
+              <h2 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FaCloudUploadAlt /> Upload Material
+              </h2>
               <form onSubmit={handleUploadSubmit}>
                 <label style={styles.label}>Title</label>
                 <input type="text" value={uploadForm.title} onChange={(e) => setUploadForm(prev => ({ ...prev, title: e.target.value }))} required style={styles.input} />
@@ -328,30 +361,9 @@ const Materials = () => {
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gap: '15px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
                 {documentsForSelectedStudentSubject.map((material) => (
-                  <div key={material._id} style={styles.card}>
-                    {material.thumbnailUrl && (
-                      <img
-                        src={resolveUploadUrl(material.thumbnailUrl)}
-                        alt={`${material.title} thumbnail`}
-                        style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }}
-                      />
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                      <div style={{ flex: 1 }}>
-                        <h3>{material.title}</h3>
-                        <p><strong>Topic:</strong> {material.topic?.name || '—'}</p>
-                        <p><strong>File Type:</strong> {material.fileType.toUpperCase()}</p>
-                        <p><strong>Uploaded by:</strong> {material.uploadedBy.name}</p>
-                        <p><strong>Downloads:</strong> {material.downloads}</p>
-                        {material.description && <p>{material.description}</p>}
-                      </div>
-                      <button onClick={() => handleDownload(material._id, material.fileName)} style={styles.button}>
-                        Download
-                      </button>
-                    </div>
-                  </div>
+                  renderMaterialCard(material)
                 ))}
               </div>
 
@@ -362,31 +374,9 @@ const Materials = () => {
           )}
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '15px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
           {materials && materials.map(material => (
-            <div key={material._id} style={styles.card}>
-              {material.thumbnailUrl && (
-                <img
-                  src={resolveUploadUrl(material.thumbnailUrl)}
-                  alt={`${material.title} thumbnail`}
-                  style={{ width: '100%', height: '170px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }}
-                />
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                <div style={{ flex: 1 }}>
-                  <h3>{material.title}</h3>
-                  <p><strong>Subject:</strong> {material.subject.name}</p>
-                  <p><strong>Topic:</strong> {material.topic?.name || '—'}</p>
-                  <p><strong>File Type:</strong> {material.fileType.toUpperCase()}</p>
-                  <p><strong>Uploaded by:</strong> {material.uploadedBy.name}</p>
-                  <p><strong>Downloads:</strong> {material.downloads}</p>
-                  {material.description && <p>{material.description}</p>}
-                </div>
-                <button onClick={() => handleDownload(material._id, material.fileName)} style={styles.button}>
-                  Download
-                </button>
-              </div>
-            </div>
+            renderMaterialCard(material)
           ))}
         </div>
       )}

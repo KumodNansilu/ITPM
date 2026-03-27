@@ -1,31 +1,47 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import { appointmentService, subjectService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
 import { showError, showSuccess, confirmDialog } from '../utils/alerts';
-import { FaCalendarAlt, FaPlusCircle, FaUsers } from 'react-icons/fa';
+import { FaCalendarAlt, FaPlusCircle, FaStar, FaUsers } from 'react-icons/fa';
 
-// Redirect existing toast calls to SweetAlert2.
 const toast = {
   success: (message) => showSuccess(message),
   error: (message) => showError(message)
 };
 
+const renderStars = (rating) => {
+  const safeRating = Math.max(0, Math.min(5, Math.round(Number(rating) || 0)));
+  return '★'.repeat(safeRating) + '☆'.repeat(5 - safeRating);
+};
+
+const parseTopicFromDescription = (description) => {
+  if (!description) return '';
+  const match = String(description).match(/^Lesson\/Topic:\s*(.+)$/m);
+  return match ? match[1].trim() : '';
+};
+
+const stripTopicPrefixFromDescription = (description) => {
+  if (!description) return '';
+  return String(description).replace(/^Lesson\/Topic:\s*.+\n?\n?/m, '').trim();
+};
+
 const TutorSessions = () => {
   const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('sessions'); // 'sessions' or 'create'
-  
+  const [activeTab, setActiveTab] = useState('sessions');
+
   const [sessions, setSessions] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [topics, setTopics] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [sessionStudents, setSessionStudents] = useState([]);
   const [thumbnailFile, setThumbnailFile] = useState(null);
-  
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [tutorAppointments, setTutorAppointments] = useState([]);
+
   const [createForm, setCreateForm] = useState({
     subject: '',
-    topic: '',
+    topicText: '',
     sessionDate: '',
     sessionTime: '09:00',
     duration: 60,
@@ -42,6 +58,42 @@ const TutorSessions = () => {
     description: ''
   });
 
+  const feedbackBySessionId = useMemo(() => {
+    const map = {};
+
+    (tutorAppointments || []).forEach((appointment) => {
+      const sessionIdRaw = appointment?.tutorSession?._id || appointment?.tutorSession;
+      const sessionId = sessionIdRaw ? String(sessionIdRaw) : '';
+      const rating = Number(appointment?.feedback?.rating);
+      if (!sessionId || !Number.isFinite(rating) || rating < 1 || rating > 5) return;
+
+      if (!map[sessionId]) {
+        map[sessionId] = {
+          total: 0,
+          count: 0,
+          items: []
+        };
+      }
+
+      map[sessionId].total += rating;
+      map[sessionId].count += 1;
+      map[sessionId].items.push({
+        appointmentId: appointment._id,
+        rating,
+        comment: appointment?.feedback?.comment || '',
+        submittedAt: appointment?.feedback?.submittedAt,
+        studentName: appointment?.student?.name || 'Student'
+      });
+    });
+
+    Object.values(map).forEach((entry) => {
+      entry.average = entry.count > 0 ? Number((entry.total / entry.count).toFixed(1)) : 0;
+      entry.items.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+    });
+
+    return map;
+  }, [tutorAppointments]);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -52,6 +104,7 @@ const TutorSessions = () => {
       }
       setLoading(false);
     };
+
     init();
   }, []);
 
@@ -61,31 +114,21 @@ const TutorSessions = () => {
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    if (!createForm.subject) {
-      setTopics([]);
-      return;
+  const fetchTutorSessions = async () => {
+    setLoading(true);
+    try {
+      const sessionsRes = await appointmentService.getTutorSessions();
+      setSessions(sessionsRes.data || []);
+    } catch (error) {
+      setSessions([]);
+      toast.error('Failed to load sessions');
     }
 
-    const fetchTopics = async () => {
-      try {
-        const response = await subjectService.getTopicsBySubject(createForm.subject);
-        setTopics(response.data || []);
-      } catch (error) {
-        toast.error('Failed to load topics');
-      }
-    };
-
-    fetchTopics();
-  }, [createForm.subject]);
-
-  const fetchTutorSessions = async () => {
     try {
-      setLoading(true);
-      const response = await appointmentService.getTutorSessions();
-      setSessions(response.data || []);
+      const appointmentsRes = await appointmentService.getTutorAppointments();
+      setTutorAppointments(appointmentsRes.data || []);
     } catch (error) {
-      toast.error('Failed to load sessions');
+      setTutorAppointments([]);
     } finally {
       setLoading(false);
     }
@@ -101,7 +144,10 @@ const TutorSessions = () => {
 
     try {
       const dateTime = new Date(`${createForm.sessionDate}T${createForm.sessionTime}`);
-      
+      const finalDescription = createForm.topicText.trim()
+        ? `Lesson/Topic: ${createForm.topicText.trim()}${createForm.description ? `\n\n${createForm.description}` : ''}`
+        : createForm.description;
+
       const payload = {
         subject: createForm.subject,
         sessionDate: dateTime.toISOString(),
@@ -109,9 +155,8 @@ const TutorSessions = () => {
         maxCapacity: Number(createForm.maxCapacity) || 10
       };
 
-      if (createForm.topic) payload.topic = createForm.topic;
       if (createForm.meetingLink) payload.meetingLink = createForm.meetingLink;
-      if (createForm.description) payload.description = createForm.description;
+      if (finalDescription) payload.description = finalDescription;
 
       const formData = new FormData();
       Object.entries(payload).forEach(([key, value]) => {
@@ -123,10 +168,10 @@ const TutorSessions = () => {
 
       await appointmentService.createTutorSession(formData);
 
-      toast.success('Session created successfully!');
+      toast.success('Session created successfully');
       setCreateForm({
         subject: '',
-        topic: '',
+        topicText: '',
         sessionDate: '',
         sessionTime: '09:00',
         duration: 60,
@@ -147,7 +192,8 @@ const TutorSessions = () => {
       setLoading(true);
       const response = await appointmentService.getTutorSessionDetails(session._id);
       setSelectedSession(response.data.session);
-      setSessionStudents(response.data.bookings);
+      setSessionStudents(response.data.bookings || []);
+      setShowEditForm(false);
     } catch (error) {
       toast.error('Failed to load session details');
     } finally {
@@ -167,7 +213,7 @@ const TutorSessions = () => {
       }
 
       await appointmentService.updateTutorSession(selectedSession._id, updateData);
-      toast.success('Session updated successfully!');
+      toast.success('Session updated successfully');
       fetchTutorSessions();
       setSelectedSession(null);
     } catch (error) {
@@ -187,7 +233,7 @@ const TutorSessions = () => {
         newDate: dateTime.toISOString()
       });
 
-      toast.success('Session rescheduled successfully!');
+      toast.success('Session rescheduled successfully');
       fetchTutorSessions();
       setSelectedSession(null);
     } catch (error) {
@@ -255,12 +301,27 @@ const TutorSessions = () => {
 
   const statusColor = (status) => {
     switch (status) {
-      case 'scheduled': return styles.badgePrimary;
-      case 'completed': return styles.badgeSuccess;
-      case 'cancelled': return styles.badgeDanger;
-      default: return styles.badgePrimary;
+      case 'scheduled':
+        return styles.badgePrimary;
+      case 'completed':
+        return styles.badgeSuccess;
+      case 'cancelled':
+        return styles.badgeDanger;
+      default:
+        return styles.badgePrimary;
     }
   };
+
+  const getSessionLessonText = (session) => {
+    return session?.topic?.name || parseTopicFromDescription(session?.description) || '—';
+  };
+
+  const getFeedbackSummary = (sessionId) => {
+    return feedbackBySessionId[String(sessionId)] || { average: 0, count: 0, items: [] };
+  };
+
+  const completedCount = sessions.filter((s) => s.status === 'completed').length;
+  const totalFeedbackCount = Object.values(feedbackBySessionId).reduce((sum, entry) => sum + (entry.count || 0), 0);
 
   if (loading && !selectedSession) {
     return (
@@ -276,149 +337,139 @@ const TutorSessions = () => {
   }
 
   if (selectedSession) {
+    const selectedFeedback = getFeedbackSummary(selectedSession._id);
+
     return (
       <div style={{ ...styles.container, marginTop: '30px' }}>
         <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
           <h1 style={{ margin: 0, marginBottom: '6px' }}>Session Details</h1>
-          <p style={{ margin: 0, opacity: 0.9 }}>Manage timing, attendance, and student participation for this session.</p>
+          <p style={{ margin: 0, opacity: 0.9 }}>Manage attendance and review student feedback for this session.</p>
         </div>
-        <button
-          onClick={() => setSelectedSession(null)}
-          style={{ ...styles.button, marginBottom: '20px', background: '#999' }}
-        >
-          ← Back to Sessions
+
+        <button onClick={() => setSelectedSession(null)} style={{ ...styles.button, marginBottom: '20px', background: '#64748b' }}>
+          Back to My Sessions
         </button>
 
         <div style={styles.card}>
-          <h2>Session Details</h2>
           {selectedSession.thumbnailUrl && (
             <img
               src={`http://localhost:5000${selectedSession.thumbnailUrl}`}
               alt="Session thumbnail"
-              style={{
-                width: '100%',
-                height: '220px',
-                objectFit: 'cover',
-                borderRadius: '8px',
-                marginBottom: '15px'
-              }}
+              style={{ width: '100%', height: '220px', objectFit: 'cover', borderRadius: '12px', marginBottom: '15px' }}
             />
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-            <div>
-              <p><strong>Module:</strong> {selectedSession.subject?.name}</p>
-              <p><strong>Lesson:</strong> {selectedSession.topic?.name || '—'}</p>
-              <p><strong>Date & Time:</strong> {formatDateTime(selectedSession.sessionDate)}</p>
-              <p><strong>Duration:</strong> {selectedSession.duration} minutes</p>
-            </div>
-            <div>
-              <p><strong>Capacity:</strong> {selectedSession.bookedCount}/{selectedSession.maxCapacity}</p>
-              <p><strong>Status:</strong> <span style={{ ...styles.badge, ...statusColor(selectedSession.status) }}>{selectedSession.status}</span></p>
-              <p><strong>Available:</strong> {selectedSession.isAvailable ? 'Yes ✅' : 'No ❌'}</p>
-              {selectedSession.meetingLink && <p><strong>Link:</strong> <a href={selectedSession.meetingLink} target="_blank" rel="noreferrer">Join</a></p>}
-            </div>
-          </div>
 
-          {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '30px' }}>
+          <h2 style={{ marginTop: 0 }}>{selectedSession.subject?.name || 'Session'}</h2>
+          <p><strong>Lesson:</strong> {getSessionLessonText(selectedSession)}</p>
+          <p><strong>Date & Time:</strong> {formatDateTime(selectedSession.sessionDate)}</p>
+          <p><strong>Duration:</strong> {selectedSession.duration} minutes</p>
+          <p><strong>Capacity:</strong> {selectedSession.bookedCount}/{selectedSession.maxCapacity}</p>
+          <p>
+            <strong>Status:</strong>{' '}
+            <span style={{ ...styles.badge, ...statusColor(selectedSession.status) }}>{selectedSession.status}</span>
+          </p>
+          {selectedSession.meetingLink && (
+            <p>
+              <strong>Link:</strong>{' '}
+              <a href={selectedSession.meetingLink} target="_blank" rel="noreferrer">Join Meeting</a>
+            </p>
+          )}
+          {stripTopicPrefixFromDescription(selectedSession.description) && (
+            <p><strong>Description:</strong> {stripTopicPrefixFromDescription(selectedSession.description)}</p>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '16px', marginBottom: '18px' }}>
             {selectedSession.status === 'scheduled' && (
               <>
-                <button onClick={() => {
-                  setEditForm({
-                    sessionDate: selectedSession.sessionDate.split('T')[0],
-                    sessionTime: selectedSession.sessionDate.split('T')[1].substring(0, 5),
-                    maxCapacity: selectedSession.maxCapacity,
-                    meetingLink: selectedSession.meetingLink || '',
-                    description: selectedSession.description || ''
-                  });
-                  // Show edit form
-                  const el = document.getElementById('editForm');
-                  if (el) el.style.display = 'block';
-                }} style={{ ...styles.button }}>
-                  ✏️ Edit
+                <button
+                  onClick={() => {
+                    setEditForm({
+                      sessionDate: selectedSession.sessionDate.split('T')[0],
+                      sessionTime: selectedSession.sessionDate.split('T')[1].substring(0, 5),
+                      maxCapacity: selectedSession.maxCapacity,
+                      meetingLink: selectedSession.meetingLink || '',
+                      description: selectedSession.description || ''
+                    });
+                    setShowEditForm(true);
+                  }}
+                  style={styles.button}
+                >
+                  Edit
                 </button>
-                <button onClick={handleRescheduleSession} style={{ ...styles.button }}>
-                  📅 Reschedule
-                </button>
-                <button onClick={handleCompleteSession} style={{ ...styles.button }}>
-                  ✓ Complete
-                </button>
-                <button onClick={handleCancelSession} style={{ ...styles.buttonDanger }}>
-                  ❌ Cancel
-                </button>
+                <button onClick={handleRescheduleSession} style={styles.button}>Reschedule</button>
+                <button onClick={handleCompleteSession} style={styles.button}>Complete</button>
+                <button onClick={handleCancelSession} style={styles.buttonDanger}>Cancel</button>
               </>
             )}
           </div>
 
-          {/* Edit Form */}
-          <form id="editForm" onSubmit={handleUpdateSession} style={{ ...styles.card, background: '#f9f9f9', marginBottom: '30px', display: 'none' }}>
-            <h3>Edit Session</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-              <div>
-                <label style={styles.label}>Date</label>
-                <input
-                  type="date"
-                  style={styles.input}
-                  value={editForm.sessionDate}
-                  onChange={(e) => setEditForm(p => ({ ...p, sessionDate: e.target.value }))}
-                />
+          {showEditForm && (
+            <form onSubmit={handleUpdateSession} style={{ ...styles.card, background: '#f8fafc', marginBottom: '20px' }}>
+              <h3 style={{ marginTop: 0 }}>Edit Session</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                <div>
+                  <label style={styles.label}>Date</label>
+                  <input type="date" style={styles.input} value={editForm.sessionDate} onChange={(e) => setEditForm((p) => ({ ...p, sessionDate: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={styles.label}>Time</label>
+                  <input type="time" style={styles.input} value={editForm.sessionTime} onChange={(e) => setEditForm((p) => ({ ...p, sessionTime: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={styles.label}>Max Capacity</label>
+                  <input type="number" min="1" style={styles.input} value={editForm.maxCapacity} onChange={(e) => setEditForm((p) => ({ ...p, maxCapacity: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={styles.label}>Meeting Link</label>
+                  <input type="url" style={styles.input} value={editForm.meetingLink} onChange={(e) => setEditForm((p) => ({ ...p, meetingLink: e.target.value }))} />
+                </div>
               </div>
-              <div>
-                <label style={styles.label}>Time</label>
-                <input
-                  type="time"
-                  style={styles.input}
-                  value={editForm.sessionTime}
-                  onChange={(e) => setEditForm(p => ({ ...p, sessionTime: e.target.value }))}
-                />
+
+              <label style={styles.label}>Description</label>
+              <textarea style={{ ...styles.input, height: '80px' }} value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} />
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                <button type="submit" style={styles.button}>Save Changes</button>
+                <button type="button" style={styles.buttonDanger} onClick={() => setShowEditForm(false)}>Close</button>
               </div>
-              <div>
-                <label style={styles.label}>Max Capacity</label>
-                <input
-                  type="number"
-                  style={styles.input}
-                  value={editForm.maxCapacity}
-                  onChange={(e) => setEditForm(p => ({ ...p, maxCapacity: e.target.value }))}
-                  min="1"
-                />
-              </div>
-              <div>
-                <label style={styles.label}>Meeting Link</label>
-                <input
-                  type="url"
-                  style={styles.input}
-                  value={editForm.meetingLink}
-                  onChange={(e) => setEditForm(p => ({ ...p, meetingLink: e.target.value }))}
-                />
+            </form>
+          )}
+
+          <h3 style={{ marginBottom: '8px' }}>Student Feedback ({selectedFeedback.count})</h3>
+          {selectedFeedback.count > 0 ? (
+            <div style={{ marginBottom: '18px' }}>
+              <p style={{ marginTop: 0, color: '#1e3a8a' }}>
+                <FaStar /> Average: <strong>{selectedFeedback.average}/5</strong> ({selectedFeedback.count} rating{selectedFeedback.count !== 1 ? 's' : ''})
+              </p>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {selectedFeedback.items.map((feedbackItem) => (
+                  <div key={feedbackItem.appointmentId} style={{ ...styles.card, marginBottom: 0, background: '#f8fafc' }}>
+                    <p style={{ marginTop: 0, marginBottom: '6px' }}><strong>{feedbackItem.studentName}</strong></p>
+                    <p style={{ marginTop: 0, marginBottom: '6px', color: '#f59e0b' }}>{renderStars(feedbackItem.rating)} ({feedbackItem.rating}/5)</p>
+                    <p style={{ marginTop: 0, marginBottom: '6px', color: '#334155' }}>{feedbackItem.comment || 'No comment provided.'}</p>
+                    {feedbackItem.submittedAt && (
+                      <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>{new Date(feedbackItem.submittedAt).toLocaleString()}</p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
-            <label style={styles.label}>Description</label>
-            <textarea
-              style={{ ...styles.input, height: '80px' }}
-              value={editForm.description}
-              onChange={(e) => setEditForm(p => ({ ...p, description: e.target.value }))}
-            />
-            <button type="submit" style={{ ...styles.button, marginTop: '10px' }}>Save Changes</button>
-          </form>
+          ) : (
+            <div style={styles.alertInfo}>No feedback submitted for this session yet.</div>
+          )}
 
-          {/* Students List */}
           <h3>Booked Students ({sessionStudents.length})</h3>
           <div style={{ display: 'grid', gap: '10px' }}>
-            {sessionStudents.length === 0 && (
-              <div style={styles.alertInfo}>No students booked yet</div>
-            )}
-            {sessionStudents.map(booking => (
-              <div key={booking._id} style={{ ...styles.card, background: '#f5f5f5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {sessionStudents.length === 0 && <div style={styles.alertInfo}>No students booked yet</div>}
+            {sessionStudents.map((booking) => (
+              <div key={booking._id} style={{ ...styles.card, background: '#f8fafc', marginBottom: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <p><strong>{booking.student?.name}</strong></p>
-                  <p style={{ fontSize: '12px', color: '#666' }}>{booking.student?.email}</p>
-                  <p style={{ fontSize: '12px', color: '#666' }}>{booking.student?.phone}</p>
+                  <p style={{ margin: 0 }}><strong>{booking.student?.name}</strong></p>
+                  <p style={{ margin: '3px 0', fontSize: '12px', color: '#64748b' }}>{booking.student?.email}</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>{booking.student?.phone}</p>
                 </div>
                 {selectedSession.status === 'scheduled' && (
-                  <button
-                    onClick={() => handleRemoveStudent(booking._id)}
-                    style={{ ...styles.buttonDanger, padding: '6px 12px' }}
-                  >
+                  <button onClick={() => handleRemoveStudent(booking._id)} style={{ ...styles.buttonDanger, padding: '6px 12px' }}>
                     Remove
                   </button>
                 )}
@@ -433,44 +484,25 @@ const TutorSessions = () => {
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
       <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
-        <h1 style={{ margin: 0, marginBottom: '6px' }}>Manage Sessions</h1>
-        <p style={{ margin: 0, opacity: 0.9 }}>Create classes, adjust schedules, and monitor student bookings.</p>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>Session Management</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Create sessions, track bookings, and review student ratings in one place.</p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
-        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCalendarAlt /> Total sessions: <strong>{sessions.length}</strong></div>
-        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaUsers /> Scheduled: <strong>{sessions.filter((s) => s.status === 'scheduled').length}</strong></div>
-        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaPlusCircle /> Subjects: <strong>{subjects.length}</strong></div>
-      </div>
-      <h1 style={{ marginBottom: '30px' }}>📅 Manage Sessions</h1>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '2px solid #e0e0e0' }}>
-        <button
-          onClick={() => setActiveTab('sessions')}
-          style={{
-            ...styles.button,
-            background: activeTab === 'sessions' ? '#667eea' : '#999',
-            borderRadius: 0,
-            borderBottom: activeTab === 'sessions' ? '4px solid #1976d2' : 'none'
-          }}
-        >
-          📋 My Sessions
-        </button>
-        <button
-          onClick={() => setActiveTab('create')}
-          style={{
-            ...styles.button,
-            background: activeTab === 'create' ? '#667eea' : '#999',
-            borderRadius: 0,
-            borderBottom: activeTab === 'create' ? '4px solid #1976d2' : 'none'
-          }}
-        >
-          ➕ Create Session
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCalendarAlt /> Total: <strong>{sessions.length}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaUsers /> Completed: <strong>{completedCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaStar /> Feedback: <strong>{totalFeedbackCount}</strong></div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+        <h1 style={{ margin: 0 }}>Manage Sessions</h1>
+        <button style={styles.button} onClick={() => setActiveTab((prev) => (prev === 'create' ? 'sessions' : 'create'))}>
+          {activeTab === 'create' ? 'Back to My Sessions' : '+ Create New Session'}
         </button>
       </div>
 
       {activeTab === 'sessions' && (
-        <div style={{ display: 'grid', gap: '15px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: '15px' }}>
           {sessions.length === 0 && (
             <div style={{ ...styles.card, textAlign: 'center' }}>
               <h3 style={{ marginTop: 0 }}>No sessions yet</h3>
@@ -479,72 +511,62 @@ const TutorSessions = () => {
             </div>
           )}
 
-          {sessions.map(session => (
-            <div
-              key={session._id}
-              onClick={() => handleSelectSession(session)}
-              style={{
-                ...styles.card,
-                cursor: 'pointer',
-                transition: 'box-shadow 0.3s',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                '&:hover': { boxShadow: '0 4px 8px rgba(0,0,0,0.2)' }
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)'}
-              onMouseLeave={(e) => e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)'}
-            >
-              {session.thumbnailUrl && (
-                <img
-                  src={`http://localhost:5000${session.thumbnailUrl}`}
-                  alt="Session thumbnail"
-                  style={{
-                    width: '100%',
-                    height: '180px',
-                    objectFit: 'cover',
-                    borderRadius: '8px',
-                    marginBottom: '12px'
-                  }}
-                />
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                <div>
-                  <h3>{session.subject?.name}</h3>
-                  <p><strong>Lesson:</strong> {session.topic?.name || '—'}</p>
-                  <p><strong>Date & Time:</strong> {formatDateTime(session.sessionDate)}</p>
-                  <p><strong>Duration:</strong> {session.duration} minutes</p>
-                  
-                  {/* Capacity Bar */}
-                  <div style={{ marginTop: '10px' }}>
-                    <p><strong>Capacity: {session.bookedCount}/{session.maxCapacity}</strong></p>
-                    <div style={{
-                      background: '#e0e0e0',
-                      borderRadius: '4px',
-                      overflow: 'hidden',
-                      height: '20px',
-                      marginTop: '5px'
-                    }}>
-                      <div
-                        style={{
-                          width: `${(session.bookedCount / session.maxCapacity) * 100}%`,
-                          background: session.bookedCount >= session.maxCapacity ? '#d32f2f' : '#4caf50',
-                          height: '100%'
-                        }}
-                      />
-                    </div>
+          {sessions.map((session) => {
+            const feedbackSummary = getFeedbackSummary(session._id);
+            const lessonText = getSessionLessonText(session);
+
+            return (
+              <div
+                key={session._id}
+                onClick={() => handleSelectSession(session)}
+                style={{ ...styles.card, cursor: 'pointer' }}
+              >
+                {session.thumbnailUrl && (
+                  <img
+                    src={`http://localhost:5000${session.thumbnailUrl}`}
+                    alt="Session thumbnail"
+                    style={{ width: '100%', height: '180px', objectFit: 'cover', borderRadius: '12px', marginBottom: '12px' }}
+                  />
+                )}
+
+                <h3 style={{ marginTop: 0 }}>{session.subject?.name || 'Session'}</h3>
+                <p style={{ marginBottom: '8px', color: '#334155' }}><strong>Lesson:</strong> {lessonText}</p>
+                <p style={{ marginBottom: '8px', color: '#334155' }}><strong>Date:</strong> {formatDateTime(session.sessionDate)}</p>
+                <p style={{ marginBottom: '8px', color: '#334155' }}><strong>Duration:</strong> {session.duration} minutes</p>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                  <span style={{ ...styles.badge, ...statusColor(session.status) }}>{session.status}</span>
+                  <span style={{ ...styles.badge, ...styles.badgePrimary }}>Capacity {session.bookedCount}/{session.maxCapacity}</span>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ width: '100%', height: '8px', borderRadius: '999px', background: '#e2e8f0' }}>
+                    <div
+                      style={{
+                        width: `${Math.min(100, (session.bookedCount / Math.max(1, session.maxCapacity)) * 100)}%`,
+                        height: '8px',
+                        borderRadius: '999px',
+                        background: session.bookedCount >= session.maxCapacity ? '#dc2626' : '#16a34a'
+                      }}
+                    />
                   </div>
                 </div>
-                <span style={{ ...styles.badge, ...statusColor(session.status) }}>
-                  {session.status}
-                </span>
+
+                <p style={{ marginTop: 0, marginBottom: '6px', color: '#f59e0b' }}>
+                  {renderStars(feedbackSummary.average)} <strong>{feedbackSummary.average || 0}/5</strong>
+                </p>
+                <p style={{ marginTop: 0, marginBottom: 0, color: '#64748b', fontSize: '13px' }}>
+                  {feedbackSummary.count} student feedback rating{feedbackSummary.count !== 1 ? 's' : ''}
+                </p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {activeTab === 'create' && (
         <div style={styles.card}>
-          <h2>Create New Study Session</h2>
+          <h2 style={{ marginTop: 0 }}>Create New Study Session</h2>
           <form onSubmit={handleCreateSession}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px' }}>
               <div>
@@ -552,28 +574,25 @@ const TutorSessions = () => {
                 <select
                   style={styles.input}
                   value={createForm.subject}
-                  onChange={(e) => setCreateForm(p => ({ ...p, subject: e.target.value }))}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, subject: e.target.value }))}
                   required
                 >
                   <option value="">Select subject</option>
-                  {subjects.map(s => (
+                  {subjects.map((s) => (
                     <option key={s._id} value={s._id}>{s.name}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label style={styles.label}>Lesson/Topic</label>
-                <select
+                <label style={styles.label}>Lesson/Topic (Keyboard Input)</label>
+                <input
+                  type="text"
                   style={styles.input}
-                  value={createForm.topic}
-                  onChange={(e) => setCreateForm(p => ({ ...p, topic: e.target.value }))}
-                >
-                  <option value="">Select topic</option>
-                  {topics.map(t => (
-                    <option key={t._id} value={t._id}>{t.name}</option>
-                  ))}
-                </select>
+                  value={createForm.topicText}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, topicText: e.target.value }))}
+                  placeholder="Type lesson or topic name"
+                />
               </div>
 
               <div>
@@ -582,7 +601,7 @@ const TutorSessions = () => {
                   type="date"
                   style={styles.input}
                   value={createForm.sessionDate}
-                  onChange={(e) => setCreateForm(p => ({ ...p, sessionDate: e.target.value }))}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, sessionDate: e.target.value }))}
                   required
                 />
               </div>
@@ -593,7 +612,7 @@ const TutorSessions = () => {
                   type="time"
                   style={styles.input}
                   value={createForm.sessionTime}
-                  onChange={(e) => setCreateForm(p => ({ ...p, sessionTime: e.target.value }))}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, sessionTime: e.target.value }))}
                   required
                 />
               </div>
@@ -604,7 +623,7 @@ const TutorSessions = () => {
                   type="number"
                   style={styles.input}
                   value={createForm.duration}
-                  onChange={(e) => setCreateForm(p => ({ ...p, duration: e.target.value }))}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, duration: e.target.value }))}
                   min="15"
                   max="300"
                 />
@@ -616,7 +635,7 @@ const TutorSessions = () => {
                   type="number"
                   style={styles.input}
                   value={createForm.maxCapacity}
-                  onChange={(e) => setCreateForm(p => ({ ...p, maxCapacity: e.target.value }))}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, maxCapacity: e.target.value }))}
                   min="1"
                   max="100"
                   required
@@ -624,12 +643,12 @@ const TutorSessions = () => {
               </div>
 
               <div>
-                <label style={styles.label}>Meeting Link (Zoom/Google Meet)</label>
+                <label style={styles.label}>Meeting Link</label>
                 <input
                   type="url"
                   style={styles.input}
                   value={createForm.meetingLink}
-                  onChange={(e) => setCreateForm(p => ({ ...p, meetingLink: e.target.value }))}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, meetingLink: e.target.value }))}
                   placeholder="https://..."
                 />
               </div>
@@ -649,12 +668,13 @@ const TutorSessions = () => {
             <textarea
               style={{ ...styles.input, height: '100px' }}
               value={createForm.description}
-              onChange={(e) => setCreateForm(p => ({ ...p, description: e.target.value }))}
+              onChange={(e) => setCreateForm((p) => ({ ...p, description: e.target.value }))}
               placeholder="What will this session cover?"
             />
 
             <button type="submit" style={{ ...styles.button, marginTop: '15px' }}>
-              ➕ Create Session
+              <FaPlusCircle style={{ marginRight: '8px' }} />
+              Create Session
             </button>
           </form>
         </div>
