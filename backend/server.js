@@ -28,6 +28,7 @@ app.use('/api/materials', require('./routes/materialRoutes'));
 app.use('/api/plans', require('./routes/planRoutes'));
 app.use('/api/questions', require('./routes/questionRoutes'));
 app.use('/api/mcq', require('./routes/mcqRoutes'));
+app.use('/api/exams', require('./routes/examRoutes'));
 app.use('/api/appointments', require('./routes/appointmentRoutes'));
 
 // Health check

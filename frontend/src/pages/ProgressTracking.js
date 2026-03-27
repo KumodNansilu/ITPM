@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { planService } from '../services/api';
 import { AuthContext } from '../context/AuthContext';
-import { toast } from 'react-toastify';
 import styles from '../styles/inlineStyles';
+import { showError } from '../utils/alerts';
+import { FaCheckCircle, FaClock, FaTasks, FaTrophy } from 'react-icons/fa';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  error: (message) => showError(message)
+};
 
 const ProgressTracking = () => {
   const { user } = useContext(AuthContext);
@@ -112,26 +118,34 @@ const ProgressTracking = () => {
 
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <h1 style={{ margin: 0, marginBottom: '6px' }}>Progress Tracking</h1>
+        <p style={{ margin: 0, opacity: 0.9 }}>Review your consistency, completion rate, and study momentum.</p>
+      </div>
       <h1 style={{ marginBottom: '30px' }}>📊 Progress Tracking</h1>
 
       {/* Statistics Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
         <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #4caf50' }}>
+          <FaCheckCircle color="#4caf50" />
           <h2 style={{ color: '#4caf50', margin: '10px 0' }}>{completedCount}</h2>
           <p style={{ margin: '0', color: '#666' }}>Completed Tasks</p>
         </div>
 
         <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #ff9800' }}>
+          <FaClock color="#ff9800" />
           <h2 style={{ color: '#ff9800', margin: '10px 0' }}>{pendingCount}</h2>
           <p style={{ margin: '0', color: '#666' }}>Pending Tasks</p>
         </div>
 
         <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #667eea' }}>
+          <FaTrophy color="#667eea" />
           <h2 style={{ color: '#667eea', margin: '10px 0' }}>{completionRate}%</h2>
           <p style={{ margin: '0', color: '#666' }}>Completion Rate</p>
         </div>
 
         <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #2196f3' }}>
+          <FaTasks color="#2196f3" />
           <h2 style={{ color: '#2196f3', margin: '10px 0' }}>{totalCount}</h2>
           <p style={{ margin: '0', color: '#666' }}>Total Tasks</p>
         </div>
@@ -220,12 +234,15 @@ const ProgressTracking = () => {
       {/* Tasks List */}
       <div style={{ display: 'grid', gap: '15px' }}>
         {filteredPlans.length === 0 && (
-          <div style={styles.alertInfo}>
+          <div style={{ ...styles.card, textAlign: 'center' }}>
+            <h3 style={{ marginTop: 0 }}>No tasks in this view</h3>
+            <p style={{ color: 'rgba(11,31,59,0.72)' }}>
             {activeTab === 'completed' && 'No completed tasks yet!'}
             {activeTab === 'pending' && 'No pending tasks. Great job!'}
             {activeTab === 'all' && viewMode === 'today' && 'No tasks scheduled for today.'}
             {activeTab === 'all' && viewMode === 'week' && 'No tasks scheduled for this week.'}
             {activeTab === 'all' && viewMode === 'all' && 'No study plans yet. Create one to get started!'}
+            </p>
           </div>
         )}
 

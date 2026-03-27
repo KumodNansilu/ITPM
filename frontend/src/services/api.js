@@ -94,6 +94,7 @@ export const questionService = {
 
 // MCQ Services
 export const mcqService = {
+  getAllMCQs: (params) => api.get('/mcq', { params }),
   createMCQ: (data) => api.post('/mcq', data),
   getMCQsBySubject: (subjectId) => api.get(`/mcq/subject/${subjectId}`),
   getMCQsByTopic: (topicId) => api.get(`/mcq/topic/${topicId}`),
@@ -102,7 +103,26 @@ export const mcqService = {
   deleteMCQ: (id) => api.delete(`/mcq/${id}`),
   submitMCQAnswer: (mcqId, data) => api.post(`/mcq/${mcqId}/submit`, data),
   getUserMCQAttempts: (filters) => api.get('/mcq/attempts/my', { params: filters }),
-  getQuizScore: (params) => api.get('/mcq/score/summary', { params })
+  getQuizScore: (params) => api.get('/mcq/score/summary', { params }),
+  startMockExam: (subjectId, topicId) => api.get('/mcq/exam/start', { params: { subjectId, topicId } }),
+  submitMockExam: (data) => api.post('/mcq/exam/submit', data),
+  getMyMockExamAttempts: () => api.get('/mcq/exam/attempts/my')
+};
+
+// Exam Services (Tutor creates 10-question exams, students attempt them)
+export const examService = {
+  createExam: (data) => api.post('/exams', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getAllExams: (params) => api.get('/exams', { params }),
+  getExamById: (id) => api.get(`/exams/${id}`),
+  getExamQuestions: (id) => api.get(`/exams/${id}/questions`),
+  updateExam: (id, data) => api.put(`/exams/${id}`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  deleteExam: (id) => api.delete(`/exams/${id}`),
+  submitExamAttempt: (examId, data) => api.post(`/exams/${examId}/submit`, data),
+  getMyExamAttempts: () => api.get('/exams/attempts/my')
 };
 
 // Appointment Services
@@ -131,6 +151,8 @@ export const appointmentService = {
     api.get('/appointments/my/bookings'),
   cancelBooking: (appointmentId) => 
     api.patch(`/appointments/bookings/${appointmentId}/cancel`),
+  submitSessionFeedback: (appointmentId, data) =>
+    api.patch(`/appointments/bookings/${appointmentId}/feedback`, data),
   
   // Tutor endpoints
   createTutorSession: (data) => 
