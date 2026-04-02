@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { planService } from '../services/api';
-import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
 import { showError } from '../utils/alerts';
 import { FaCheckCircle, FaClock, FaTasks, FaTrophy } from 'react-icons/fa';
@@ -11,7 +10,6 @@ const toast = {
 };
 
 const ProgressTracking = () => {
-  const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [allPlans, setAllPlans] = useState([]);
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'completed', 'pending'

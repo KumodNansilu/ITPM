@@ -58,6 +58,8 @@ const Materials = () => {
   useEffect(() => {
     fetchMaterials();
     fetchSubjects();
+    // Intentional: refetch when selected subject filter changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubject]);
 
 

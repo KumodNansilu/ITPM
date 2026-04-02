@@ -102,6 +102,8 @@ const MCQ = () => {
       fetchExamAttemptHistory();
     }
     setLoading(false);
+    // Intentional: data reload is keyed off role/form/filter state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTutor, isStudent, creatingExam, editingExamId, selectedSubject, selectedTopic]);
 
   const fetchSubjects = async () => {

@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useContext, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { appointmentService, subjectService } from '../services/api';
-import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
 import { showError, showSuccess, confirmDialog } from '../utils/alerts';
 import { FaCalendarAlt, FaPlusCircle, FaStar, FaUsers } from 'react-icons/fa';
@@ -27,7 +26,6 @@ const stripTopicPrefixFromDescription = (description) => {
 };
 
 const TutorSessions = () => {
-  const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('sessions');
 

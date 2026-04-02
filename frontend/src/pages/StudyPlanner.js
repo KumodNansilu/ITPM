@@ -1,6 +1,5 @@
-import React, { useState, useContext, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { planService, subjectService } from '../services/api';
-import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
 import { showError, showSuccess, confirmDialog } from '../utils/alerts';
 import { FaCalendarAlt, FaCheckCircle, FaClock } from 'react-icons/fa';
@@ -15,7 +14,6 @@ const StudyPlanner = () => {
   const [plans, setPlans] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
-  const { user } = useContext(AuthContext);
   const [subjects, setSubjects] = useState([]);
   const [topics, setTopics] = useState([]);
   const [formData, setFormData] = useState({

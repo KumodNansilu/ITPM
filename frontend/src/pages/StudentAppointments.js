@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import { appointmentService, subjectService } from '../services/api';
-import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
 import { showError, showSuccess, confirmDialog } from '../utils/alerts';
 import { FaCalendarAlt, FaChalkboardTeacher, FaFilter } from 'react-icons/fa';
@@ -14,7 +13,6 @@ const toast = {
 const renderStars = (rating) => '★'.repeat(Math.max(0, Math.min(5, rating))) + '☆'.repeat(5 - Math.max(0, Math.min(5, rating)));
 
 const StudentAppointments = () => {
-  const { user } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('browse'); // 'browse' or 'booked'
   
@@ -56,6 +54,8 @@ const StudentAppointments = () => {
     } else {
       fetchBookedSessions();
     }
+    // Intentional: refetch when tab or filter criteria change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, filters]);
 
   const fetchAvailableSessions = async () => {
@@ -91,7 +91,7 @@ const StudentAppointments = () => {
 
   const handleBookSession = async (sessionId) => {
     try {
-      const response = await appointmentService.bookSession({ sessionId });
+      await appointmentService.bookSession({ sessionId });
       toast.success('Session booked successfully!');
       fetchAvailableSessions();
       fetchBookedSessions();

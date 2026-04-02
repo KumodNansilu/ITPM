@@ -31,7 +31,7 @@ const Questions = () => {
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [answers, setAnswers] = useState([]);
   const [answerContent, setAnswerContent] = useState('');
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoading] = useState(false);
   const [isEditingQuestion, setIsEditingQuestion] = useState(false);
   const [questionEdit, setQuestionEdit] = useState({ title: '', description: '' });
   const [editingAnswerId, setEditingAnswerId] = useState(null);
