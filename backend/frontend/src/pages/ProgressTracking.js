@@ -1,0 +1,402 @@
+import React, { useState, useEffect, useContext } from 'react';
+import { planService } from '../services/api';
+import { AuthContext } from '../context/AuthContext';
+import styles from '../styles/inlineStyles';
+import { showError } from '../utils/alerts';
+import { FaCheckCircle, FaClock, FaTasks, FaTrophy } from 'react-icons/fa';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  error: (message) => showError(message)
+};
+
+const ProgressTracking = () => {
+  const { user } = useContext(AuthContext);
+  const [loading, setLoading] = useState(true);
+  const [allPlans, setAllPlans] = useState([]);
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'completed', 'pending'
+  const [viewMode, setViewMode] = useState('all'); // 'all', 'today', 'week'
+
+  useEffect(() => {
+    fetchPlans();
+  }, []);
+
+  const fetchPlans = async () => {
+    try {
+      setLoading(true);
+      const response = await planService.getStudentPlans();
+      setAllPlans(response.data || []);
+    } catch (error) {
+      toast.error('Failed to fetch plans');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - today.getDay());
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+
+  // Filter plans by status
+  const getFilteredPlans = () => {
+    let filtered = allPlans;
+
+    // Filter by status
+    if (activeTab === 'completed') {
+      filtered = filtered.filter(p => p.status === 'completed');
+    } else if (activeTab === 'pending') {
+      filtered = filtered.filter(p => p.status === 'pending');
+    }
+
+    // Filter by date
+    if (viewMode === 'today') {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      filtered = filtered.filter(p => {
+        const planDate = new Date(p.plannedDate);
+        planDate.setHours(0, 0, 0, 0);
+        return planDate.getTime() === today.getTime();
+      });
+    } else if (viewMode === 'week') {
+      filtered = filtered.filter(p => {
+        const planDate = new Date(p.plannedDate);
+        return planDate >= weekStart && planDate <= weekEnd;
+      });
+    }
+
+    return filtered.sort((a, b) => new Date(a.plannedDate) - new Date(b.plannedDate));
+  };
+
+  const filteredPlans = getFilteredPlans();
+
+  // Calculate statistics
+  const completedCount = allPlans.filter(p => p.status === 'completed').length;
+  const pendingCount = allPlans.filter(p => p.status === 'pending').length;
+  const totalCount = allPlans.length;
+  const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const isToday = date.toDateString() === today.toDateString();
+    const isTomorrow = new Date(date.getTime() + 24 * 60 * 60 * 1000).toDateString() === today.toDateString();
+    
+    if (isToday) return 'Today';
+    if (isTomorrow) return 'Tomorrow';
+    
+    return date.toLocaleDateString([], {
+      month: 'short',
+      day: 'numeric',
+      weekday: 'short'
+    });
+  };
+
+  const formatTime = (dateString) => {
+    return new Date(dateString).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  if (loading) {
+    return (
+      <div style={styles.loading}>
+        <svg style={styles.spinnerSvg} viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="20" fill="none" stroke="#e6e6e6" strokeWidth="5"></circle>
+          <path d="M45 25a20 20 0 0 1-20 20" stroke="#667eea" strokeWidth="5" strokeLinecap="round" fill="none">
+            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite" />
+          </path>
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...styles.container, marginTop: '30px' }}>
+      <style>
+        {`@keyframes progressHeaderFloat {
+          0%, 100% {
+            transform: translateY(0px);
+            box-shadow: 0 12px 24px rgba(2,6,23,0.3);
+          }
+          50% {
+            transform: translateY(-6px);
+            box-shadow: 0 18px 30px rgba(2,6,23,0.4);
+          }
+        }
+
+        @keyframes progressImagePulse {
+          0%, 100% {
+            transform: scale(1);
+            filter: saturate(100%);
+          }
+          50% {
+            transform: scale(1.03);
+            filter: saturate(114%);
+          }
+        }`}
+      </style>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0, marginBottom: '6px' }}>Progress Tracking</h1>
+            <p style={{ margin: 0, opacity: 0.9 }}>Review your consistency, completion rate, and study momentum.</p>
+          </div>
+          <div
+            style={{
+              padding: '8px',
+              borderRadius: '14px',
+              border: '1px solid rgba(255,255,255,0.28)',
+              background: 'rgba(255,255,255,0.14)',
+              backdropFilter: 'blur(10px) saturate(145%)',
+              WebkitBackdropFilter: 'blur(10px) saturate(145%)',
+              boxShadow: '0 12px 24px rgba(2,6,23,0.3)',
+              animation: 'progressHeaderFloat 5s ease-in-out infinite'
+            }}
+          >
+            <img
+              src="/image/PTP.jpeg"
+              alt="Progress tracking"
+              style={{ width: '168px', height: '89px', objectFit: 'cover', borderRadius: '10px', display: 'block', animation: 'progressImagePulse 5s ease-in-out infinite' }}
+            />
+          </div>
+        </div>
+      </div>
+      <h1 style={{ marginBottom: '30px' }}>📊 Progress Tracking</h1>
+
+      {/* Statistics Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+        <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #4caf50' }}>
+          <FaCheckCircle color="#4caf50" />
+          <h2 style={{ color: '#4caf50', margin: '10px 0' }}>{completedCount}</h2>
+          <p style={{ margin: '0', color: '#666' }}>Completed Tasks</p>
+        </div>
+
+        <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #ff9800' }}>
+          <FaClock color="#ff9800" />
+          <h2 style={{ color: '#ff9800', margin: '10px 0' }}>{pendingCount}</h2>
+          <p style={{ margin: '0', color: '#666' }}>Pending Tasks</p>
+        </div>
+
+        <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #667eea' }}>
+          <FaTrophy color="#667eea" />
+          <h2 style={{ color: '#667eea', margin: '10px 0' }}>{completionRate}%</h2>
+          <p style={{ margin: '0', color: '#666' }}>Completion Rate</p>
+        </div>
+
+        <div style={{ ...styles.card, textAlign: 'center', borderLeft: '4px solid #2196f3' }}>
+          <FaTasks color="#2196f3" />
+          <h2 style={{ color: '#2196f3', margin: '10px 0' }}>{totalCount}</h2>
+          <p style={{ margin: '0', color: '#666' }}>Total Tasks</p>
+        </div>
+      </div>
+
+      {/* View Mode Toggle */}
+      <div style={{ ...styles.card, marginBottom: '30px' }}>
+        <h3>📅 Schedule View</h3>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setViewMode('all')}
+            style={{
+              ...styles.button,
+              background: viewMode === 'all' ? '#667eea' : '#ccc',
+              cursor: 'pointer'
+            }}
+          >
+            All Tasks
+          </button>
+          <button
+            onClick={() => setViewMode('today')}
+            style={{
+              ...styles.button,
+              background: viewMode === 'today' ? '#667eea' : '#ccc',
+              cursor: 'pointer'
+            }}
+          >
+            Today's Tasks
+          </button>
+          <button
+            onClick={() => setViewMode('week')}
+            style={{
+              ...styles.button,
+              background: viewMode === 'week' ? '#667eea' : '#ccc',
+              cursor: 'pointer'
+            }}
+          >
+            This Week
+          </button>
+        </div>
+      </div>
+
+      {/* Status Filter Tabs */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', borderBottom: '2px solid #e0e0e0', paddingBottom: '10px' }}>
+        <button
+          onClick={() => setActiveTab('all')}
+          style={{
+            ...styles.button,
+            background: activeTab === 'all' ? '#667eea' : 'transparent',
+            color: activeTab === 'all' ? 'white' : '#666',
+            borderRadius: 0,
+            borderBottom: activeTab === 'all' ? '3px solid #1976d2' : 'none',
+            fontSize: '14px'
+          }}
+        >
+          📋 All Tasks ({allPlans.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('completed')}
+          style={{
+            ...styles.button,
+            background: activeTab === 'completed' ? '#4caf50' : 'transparent',
+            color: activeTab === 'completed' ? 'white' : '#666',
+            borderRadius: 0,
+            borderBottom: activeTab === 'completed' ? '3px solid #388e3c' : 'none',
+            fontSize: '14px'
+          }}
+        >
+          ✅ Completed ({completedCount})
+        </button>
+        <button
+          onClick={() => setActiveTab('pending')}
+          style={{
+            ...styles.button,
+            background: activeTab === 'pending' ? '#ff9800' : 'transparent',
+            color: activeTab === 'pending' ? 'white' : '#666',
+            borderRadius: 0,
+            borderBottom: activeTab === 'pending' ? '3px solid #f57c00' : 'none',
+            fontSize: '14px'
+          }}
+        >
+          ⏳ Pending ({pendingCount})
+        </button>
+      </div>
+
+      {/* Tasks List */}
+      <div style={{ display: 'grid', gap: '15px' }}>
+        {filteredPlans.length === 0 && (
+          <div style={{ ...styles.card, textAlign: 'center' }}>
+            <h3 style={{ marginTop: 0 }}>No tasks in this view</h3>
+            <p style={{ color: 'rgba(11,31,59,0.72)' }}>
+            {activeTab === 'completed' && 'No completed tasks yet!'}
+            {activeTab === 'pending' && 'No pending tasks. Great job!'}
+            {activeTab === 'all' && viewMode === 'today' && 'No tasks scheduled for today.'}
+            {activeTab === 'all' && viewMode === 'week' && 'No tasks scheduled for this week.'}
+            {activeTab === 'all' && viewMode === 'all' && 'No study plans yet. Create one to get started!'}
+            </p>
+          </div>
+        )}
+
+        {filteredPlans.map(plan => {
+          const planDate = new Date(plan.plannedDate);
+          const isOverdue = plan.status === 'pending' && planDate < today;
+
+          return (
+            <div key={plan._id} style={{
+              ...styles.card,
+              borderLeft: `4px solid ${plan.status === 'completed' ? '#4caf50' : isOverdue ? '#d32f2f' : '#ff9800'}`,
+              opacity: plan.status === 'completed' ? 0.7 : 1
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '20px' }}>
+                <div style={{ flex: 1 }}>
+                  {/* Completion Status */}
+                  {plan.status === 'completed' && (
+                    <span style={{ ...styles.badge, ...styles.badgeSuccess, marginRight: '10px' }}>
+                      ✅ COMPLETED
+                    </span>
+                  )}
+                  {plan.status === 'pending' && isOverdue && (
+                    <span style={{ ...styles.badge, ...styles.badgeDanger, marginRight: '10px' }}>
+                      ⚠️ OVERDUE
+                    </span>
+                  )}
+                  {plan.status === 'pending' && !isOverdue && (
+                    <span style={{ ...styles.badge, ...styles.badgeWarning, marginRight: '10px' }}>
+                      ⏳ PENDING
+                    </span>
+                  )}
+
+                  {/* Subject & Topic */}
+                  <h3 style={{ marginTop: '10px' }}>{plan.subject?.name}</h3>
+                  {plan.topic && (
+                    <p><strong>📝 Topic:</strong> {plan.topic?.name}</p>
+                  )}
+
+                  {/* Date & Time */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginTop: '10px' }}>
+                    <div>
+                      <strong>📅 Date:</strong>
+                      <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>
+                        {formatDate(plan.plannedDate)}
+                      </p>
+                    </div>
+                    <div>
+                      <strong>⏰ Time:</strong>
+                      <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>
+                        {formatTime(plan.plannedDate)}
+                      </p>
+                    </div>
+                    <div>
+                      <strong>⏱️ Duration:</strong>
+                      <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>
+                        {plan.duration} minutes
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  {plan.notes && (
+                    <div style={{ marginTop: '15px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
+                      <strong>📌 Notes:</strong>
+                      <p style={{ margin: '5px 0 0 0', fontSize: '14px', color: '#555' }}>
+                        {plan.notes}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Completion Info */}
+                  {plan.status === 'completed' && plan.completedAt && (
+                    <div style={{ marginTop: '10px', fontSize: '12px', color: '#999' }}>
+                      ✓ Completed on {new Date(plan.completedAt).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Progress Indicator */}
+                <div style={{ minWidth: '100px', textAlign: 'center' }}>
+                  <div style={{
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: plan.status === 'completed' ? '#e8f5e9' : '#fff3e0',
+                    border: `3px solid ${plan.status === 'completed' ? '#4caf50' : '#ff9800'}`
+                  }}>
+                    <div style={{ textAlign: 'center' }}>
+                      {plan.status === 'completed' ? (
+                        <div style={{ fontSize: '32px' }}>✅</div>
+                      ) : (
+                        <div>
+                          <div style={{ fontSize: '20px' }}>⏳</div>
+                          <div style={{ fontSize: '10px', color: '#666' }}>pending</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default ProgressTracking;
