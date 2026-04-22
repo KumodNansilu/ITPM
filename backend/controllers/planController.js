@@ -1,12 +1,19 @@
 const StudyPlan = require('../models/StudyPlan');
+const Topic = require('../models/Topic');
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Create Study Plan
 exports.createPlan = async (req, res) => {
   try {
-    const { subject, topic, plannedDate, duration, notes } = req.body;
+    const { subject, topic, topicName, plannedDate, duration, notes } = req.body;
 
     if (!subject || !plannedDate || !duration) {
       return res.status(400).json({ message: 'Subject, planned date, and duration are required' });
+    }
+
+    if (req.file && !req.file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ message: 'Thumbnail must be an image file' });
     }
 
     const planData = {
@@ -14,12 +21,34 @@ exports.createPlan = async (req, res) => {
       subject,
       plannedDate,
       duration,
-      notes: notes || ''
+      notes: notes || '',
+      thumbnailUrl: req.file ? `/uploads/${req.file.filename}` : ''
     };
 
-    // Only add topic if provided
+    let resolvedTopicId = null;
+
     if (topic) {
-      planData.topic = topic;
+      resolvedTopicId = topic;
+    } else if (topicName && String(topicName).trim()) {
+      const normalizedTopicName = String(topicName).trim();
+      const existingTopic = await Topic.findOne({
+        subject,
+        name: { $regex: `^${escapeRegex(normalizedTopicName)}$`, $options: 'i' }
+      });
+
+      if (existingTopic) {
+        resolvedTopicId = existingTopic._id;
+      } else {
+        const createdTopic = await Topic.create({
+          name: normalizedTopicName,
+          subject
+        });
+        resolvedTopicId = createdTopic._id;
+      }
+    }
+
+    if (resolvedTopicId) {
+      planData.topic = resolvedTopicId;
     }
 
     const plan = new StudyPlan(planData);
