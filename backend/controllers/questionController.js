@@ -1,5 +1,8 @@
 const Question = require('../models/Question');
 const Answer = require('../models/Answer');
+const { createNotification } = require('../services/notificationService');
+
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Create Question
 exports.createQuestion = async (req, res) => {
@@ -37,19 +40,77 @@ exports.createQuestion = async (req, res) => {
 // Get all questions
 exports.getAllQuestions = async (req, res) => {
   try {
-    const { subject, status } = req.query;
+    const { subject, topic, status, search, sort = 'latest' } = req.query;
     let filter = {};
 
     if (subject) filter.subject = subject;
+    if (topic) filter.topic = topic;
     if (status) filter.status = status;
+    if (search) {
+      const safeSearch = escapeRegex(search.trim());
+      filter.$or = [
+        { title: { $regex: safeSearch, $options: 'i' } },
+        { description: { $regex: safeSearch, $options: 'i' } }
+      ];
+    }
 
-    const questions = await Question.find(filter)
+    const [questions, answerStats] = await Promise.all([
+      Question.find(filter)
       .populate('asker', 'name profilePicture')
       .populate('subject', 'name')
       .populate('topic', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean(),
+      Answer.aggregate([
+        {
+          $group: {
+            _id: '$question',
+            answerCount: { $sum: 1 },
+            totalHelpfulCount: { $sum: '$helpfulCount' },
+            acceptedCount: {
+              $sum: { $cond: [{ $eq: ['$isAccepted', true] }, 1, 0] }
+            }
+          }
+        }
+      ])
+    ]);
 
-    res.status(200).json(questions);
+    const statsByQuestionId = new Map(
+      answerStats.map((stat) => [String(stat._id), stat])
+    );
+
+    const questionsWithStats = questions.map((question) => {
+      const stats = statsByQuestionId.get(String(question._id)) || {
+        answerCount: 0,
+        totalHelpfulCount: 0,
+        acceptedCount: 0
+      };
+
+      return {
+        ...question,
+        answerCount: stats.answerCount,
+        totalHelpfulCount: stats.totalHelpfulCount,
+        resolved: stats.acceptedCount > 0 || question.status === 'answered' || question.status === 'closed'
+      };
+    });
+
+    const sortedQuestions = [...questionsWithStats].sort((a, b) => {
+      if (sort === 'mostAnswered') {
+        const answerDiff = (b.answerCount || 0) - (a.answerCount || 0);
+        if (answerDiff !== 0) return answerDiff;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      }
+
+      if (sort === 'mostLiked') {
+        const likeDiff = (b.totalHelpfulCount || 0) - (a.totalHelpfulCount || 0);
+        if (likeDiff !== 0) return likeDiff;
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      }
+
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    res.status(200).json(sortedQuestions);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -144,6 +205,11 @@ exports.createAnswer = async (req, res) => {
     const { content } = req.body;
     const { questionId } = req.params;
 
+    const question = await Question.findById(questionId).populate('subject', 'name').lean();
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found' });
+    }
+
     const answer = new Answer({
       question: questionId,
       answerer: req.user.id,
@@ -154,6 +220,15 @@ exports.createAnswer = async (req, res) => {
 
     // Update question status
     await Question.findByIdAndUpdate(questionId, { status: 'answered' });
+
+    await createNotification({
+      recipient: question.asker,
+      type: 'question_answered',
+      title: 'New answer to your question',
+      message: `Your question "${question.title}" has a new answer.`,
+      link: `/questions/${questionId}`,
+      metadata: { questionId: String(questionId) }
+    });
 
     res.status(201).json({
       message: 'Answer created successfully',
@@ -260,6 +335,14 @@ exports.markAnswerAccepted = async (req, res) => {
 
     answer.isAccepted = !answer.isAccepted;
     await answer.save();
+
+    const updatedQuestion = await Question.findById(answer.question);
+    if (updatedQuestion) {
+      const acceptedCount = await Answer.countDocuments({ question: updatedQuestion._id, isAccepted: true });
+      updatedQuestion.status = acceptedCount > 0 ? 'answered' : 'open';
+      updatedQuestion.updatedAt = Date.now();
+      await updatedQuestion.save();
+    }
 
     res.status(200).json({
       message: 'Answer marked as accepted',
