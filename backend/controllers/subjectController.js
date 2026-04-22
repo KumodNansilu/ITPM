@@ -4,12 +4,16 @@ const Topic = require('../models/Topic');
 // Create Subject
 exports.createSubject = async (req, res) => {
   try {
-    const { name, description, code } = req.body;
+    const { name, description, code, academicFaculty, degreeName, year, semester } = req.body;
 
     const subject = new Subject({
       name,
       description,
       code,
+      academicFaculty,
+      degreeName,
+      year,
+      semester,
       createdBy: req.user.id
     });
 
@@ -55,11 +59,11 @@ exports.getSubjectById = async (req, res) => {
 // Update Subject
 exports.updateSubject = async (req, res) => {
   try {
-    const { name, description, code } = req.body;
+    const { name, description, code, academicFaculty, degreeName, year, semester } = req.body;
 
     const subject = await Subject.findByIdAndUpdate(
       req.params.id,
-      { name, description, code, updatedAt: Date.now() },
+      { name, description, code, academicFaculty, degreeName, year, semester, updatedAt: Date.now() },
       { new: true }
     );
 

@@ -9,6 +9,10 @@ const studyMaterialSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  thumbnailUrl: {
+    type: String,
+    default: ''
+  },
   subject: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subject',
