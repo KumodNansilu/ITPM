@@ -1,14 +1,34 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { questionService, subjectService } from '../services/api';
-import { toast } from 'react-toastify';
 import { AuthContext } from '../context/AuthContext';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess, confirmDialog } from '../utils/alerts';
+import { FaCheckCircle, FaComments, FaQuestionCircle, FaSearch, FaSortAmountDown } from 'react-icons/fa';
+import { formatDistanceToNow } from 'date-fns';
+
+// Redirect existing toast calls to SweetAlert2.
+const toast = {
+  success: (message) => showSuccess(message),
+  error: (message) => showError(message)
+};
+
+const englishLettersAndNumbersRegex = /^[A-Za-z0-9\s]+$/;
+
+const sanitizeToEnglishLettersAndNumbers = (value) => value.replace(/[^A-Za-z0-9\s]/g, '');
 
 const Questions = () => {
   const { user } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [questions, setQuestions] = useState([]);
   const [subjects, setSubjects] = useState([]);
+  const [topics, setTopics] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
+  const [topicFilter, setTopicFilter] = useState('');
+  const [sortBy, setSortBy] = useState('latest');
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -16,22 +36,47 @@ const Questions = () => {
     topic: '',
     questionType: 'text'
   });
+  const [formErrors, setFormErrors] = useState({ title: '', description: '' });
   const [imageFile, setImageFile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [selectedQuestion, setSelectedQuestion] = useState(null);
   const [answers, setAnswers] = useState([]);
   const [answerContent, setAnswerContent] = useState('');
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailLoading] = useState(false);
   const [isEditingQuestion, setIsEditingQuestion] = useState(false);
   const [questionEdit, setQuestionEdit] = useState({ title: '', description: '' });
   const [editingAnswerId, setEditingAnswerId] = useState(null);
   const [editingAnswerContent, setEditingAnswerContent] = useState('');
+  const [imageViewer, setImageViewer] = useState({
+    isOpen: false,
+    src: null,
+    zoom: 1
+  });
 
   useEffect(() => {
-    fetchQuestions();
     fetchSubjects();
   }, []);
+
+  useEffect(() => {
+    const subjectFromUrl = searchParams.get('subject') || '';
+    const topicFromUrl = searchParams.get('topic') || '';
+    if (subjectFromUrl) {
+      setSubjectFilter(subjectFromUrl);
+    }
+    if (topicFromUrl) {
+      setTopicFilter(topicFromUrl);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (subjectFilter) {
+      fetchTopics(subjectFilter);
+    } else {
+      setTopics([]);
+      setTopicFilter('');
+    }
+  }, [subjectFilter]);
 
   useEffect(() => {
     if (selectedQuestion) {
@@ -45,16 +90,25 @@ const Questions = () => {
     }
   }, [selectedQuestionId, selectedQuestion]);
 
-  const fetchQuestions = async () => {
+  const fetchQuestions = useCallback(async () => {
     try {
-      const response = await questionService.getAllQuestions();
+      const response = await questionService.getAllQuestions({
+        search: searchText,
+        subject: subjectFilter,
+        topic: topicFilter,
+        sort: sortBy
+      });
       setQuestions(response.data);
     } catch (error) {
       toast.error('Failed to fetch questions');
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchText, sortBy, subjectFilter, topicFilter]);
+
+  useEffect(() => {
+    fetchQuestions();
+  }, [fetchQuestions]);
 
   const fetchSubjects = async () => {
     try {
@@ -65,13 +119,38 @@ const Questions = () => {
     }
   };
 
+  const fetchTopics = async (subjectId) => {
+    try {
+      const response = await subjectService.getTopicsBySubject(subjectId);
+      setTopics(response.data || []);
+    } catch (error) {
+      setTopics([]);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const trimmedTitle = formData.title.trim();
+    const trimmedDescription = formData.description.trim();
+    const nextErrors = { title: '', description: '' };
+
+    if (!trimmedTitle) {
+      nextErrors.title = 'Title is required.';
+    } else if (!englishLettersAndNumbersRegex.test(trimmedTitle)) {
+      nextErrors.title = 'Title can only contain English letters and numbers.';
+    }
+
+    if (nextErrors.title) {
+      setFormErrors(nextErrors);
+      return;
+    }
+
     try {
       if (imageFile) {
         const payload = new FormData();
-        payload.append('title', formData.title);
-        payload.append('description', formData.description);
+        payload.append('title', trimmedTitle);
+        payload.append('description', trimmedDescription);
         payload.append('subject', formData.subject);
         if (formData.topic) {
           payload.append('topic', formData.topic);
@@ -82,8 +161,8 @@ const Questions = () => {
         await questionService.createQuestion(payload);
       } else {
         const payload = {
-          title: formData.title,
-          description: formData.description,
+          title: trimmedTitle,
+          description: trimmedDescription,
           subject: formData.subject,
           questionType: formData.questionType
         };
@@ -96,6 +175,7 @@ const Questions = () => {
       }
       toast.success('Question posted successfully');
       setFormData({ title: '', description: '', subject: '', topic: '', questionType: 'text' });
+      setFormErrors({ title: '', description: '' });
       setImageFile(null);
       setShowForm(false);
       fetchQuestions();
@@ -115,20 +195,44 @@ const Questions = () => {
     return `http://localhost:5000${imageUrl}`;
   };
 
-  const openQuestion = async (questionId) => {
-    setSelectedQuestionId(questionId);
-    setSelectedQuestion(null);
-    setAnswers([]);
-    setDetailLoading(true);
-    try {
-      const response = await questionService.getQuestionById(questionId);
-      setSelectedQuestion(response.data.question);
-      setAnswers(response.data.answers || []);
-    } catch (error) {
-      toast.error('Failed to load question');
-    } finally {
-      setDetailLoading(false);
+  const openImageViewer = (src) => {
+    if (!src) {
+      return;
     }
+    setImageViewer({ isOpen: true, src, zoom: 1 });
+  };
+
+  const closeImageViewer = () => {
+    setImageViewer({ isOpen: false, src: null, zoom: 1 });
+  };
+
+  const zoomImageViewer = (delta) => {
+    setImageViewer((prev) => {
+      const nextZoom = Math.min(5, Math.max(1, (prev.zoom || 1) + delta));
+      return { ...prev, zoom: nextZoom };
+    });
+  };
+
+  const handleViewerWheel = (e) => {
+    // Prevent the page from scrolling while zooming the image.
+    e.preventDefault();
+    const direction = e.deltaY > 0 ? -1 : 1;
+    zoomImageViewer(direction * 0.2);
+  };
+
+  const openQuestion = (questionId) => {
+    navigate(`/questions/${questionId}`);
+  };
+
+  const getStatusLabel = (question) => {
+    if (question.status === 'answered' || question.resolved) return 'Resolved';
+    if (question.status === 'closed') return 'Closed';
+    return 'Unanswered';
+  };
+
+  const getTimeLabel = (value) => {
+    if (!value) return 'just now';
+    return formatDistanceToNow(new Date(value), { addSuffix: true });
   };
 
   const closeQuestion = () => {
@@ -190,7 +294,12 @@ const Questions = () => {
     if (!selectedQuestionId) {
       return;
     }
-    const confirmed = window.confirm('Delete this question? This will remove all answers.');
+    const confirmed = await confirmDialog({
+      title: 'Delete question?',
+      text: 'This will remove all answers.',
+      icon: 'warning',
+      confirmButtonText: 'Yes, delete'
+    });
     if (!confirmed) {
       return;
     }
@@ -232,7 +341,12 @@ const Questions = () => {
   };
 
   const handleAnswerDelete = async (answerId) => {
-    const confirmed = window.confirm('Delete this answer?');
+    const confirmed = await confirmDialog({
+      title: 'Delete answer?',
+      text: 'This action cannot be undone.',
+      icon: 'warning',
+      confirmButtonText: 'Yes, delete'
+    });
     if (!confirmed) {
       return;
     }
@@ -260,8 +374,169 @@ const Questions = () => {
     );
   }
 
+  const answeredCount = questions.filter((q) => q.status === 'answered').length;
+  const openCount = questions.length - answeredCount;
+  const totalViews = questions.reduce((sum, q) => sum + (q.views || 0), 0);
   return (
     <div style={{ ...styles.container, marginTop: '30px' }}>
+      <style>
+        {`@keyframes qaHeaderFloat {
+          0%, 100% {
+            transform: translateY(0px);
+            box-shadow: 0 12px 24px rgba(2,6,23,0.3);
+          }
+          50% {
+            transform: translateY(-6px);
+            box-shadow: 0 18px 30px rgba(2,6,23,0.4);
+          }
+        }
+
+        @keyframes qaImagePulse {
+          0%, 100% {
+            transform: scale(1);
+            filter: saturate(100%);
+          }
+          50% {
+            transform: scale(1.03);
+            filter: saturate(114%);
+          }
+        }
+
+        @keyframes qaPostCardIn {
+          0% {
+            opacity: 0;
+            transform: translateY(18px) scale(0.98);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .qa-post-card {
+          animation: qaPostCardIn 520ms ease-out both;
+          transition: transform 220ms ease, box-shadow 220ms ease;
+          will-change: transform;
+        }
+
+        .qa-post-card:hover {
+          transform: translateY(-6px);
+          box-shadow: 0 16px 28px rgba(15, 23, 42, 0.14);
+        }
+
+        .qa-post-card:active {
+          transform: translateY(-2px) scale(0.995);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .qa-post-card {
+            animation: none;
+            transition: none;
+          }
+        }`}
+      </style>
+      <div style={{ ...styles.card, background: 'linear-gradient(135deg, #0b1f3b 0%, #1e3a8a 100%)', color: 'white', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={{ margin: 0, marginBottom: '6px' }}>Q&A Forum</h1>
+            <p style={{ margin: 0, opacity: 0.9 }}>Ask faster, answer better, and learn from the community.</p>
+          </div>
+          <div
+            style={{
+              padding: '8px',
+              borderRadius: '14px',
+              border: '1px solid rgba(255,255,255,0.28)',
+              background: 'rgba(255,255,255,0.14)',
+              backdropFilter: 'blur(10px) saturate(145%)',
+              WebkitBackdropFilter: 'blur(10px) saturate(145%)',
+              boxShadow: '0 12px 24px rgba(2,6,23,0.3)',
+              animation: 'qaHeaderFloat 5s ease-in-out infinite'
+            }}
+          >
+            <img
+              src="/image/q&a.png"
+              alt="Q&A forum"
+              style={{ width: '168px', height: '89px', objectFit: 'cover', borderRadius: '10px', display: 'block', animation: 'qaImagePulse 5s ease-in-out infinite' }}
+            />
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaQuestionCircle /> Open: <strong>{openCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaCheckCircle /> Answered: <strong>{answeredCount}</strong></div>
+        <div style={{ ...styles.card, marginBottom: 0, padding: '14px 16px' }}><FaComments /> Views: <strong>{totalViews}</strong></div>
+      </div>
+
+      <div style={{ ...styles.card, marginBottom: '24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+          <div>
+            <label style={styles.label}>Search Questions</label>
+            <div style={{ position: 'relative' }}>
+              <FaSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+              <input
+                type="text"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                placeholder="Search by keyword"
+                style={{ ...styles.input, paddingLeft: '36px' }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={styles.label}>Subject</label>
+            <select
+              value={subjectFilter}
+              onChange={(e) => setSubjectFilter(e.target.value)}
+              style={styles.input}
+            >
+              <option value="">All Subjects</option>
+              {subjects.map((subject) => (
+                <option key={subject._id} value={subject._id}>{subject.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={styles.label}>Topic</label>
+            <select
+              value={topicFilter}
+              onChange={(e) => setTopicFilter(e.target.value)}
+              style={styles.input}
+              disabled={!subjectFilter}
+            >
+              <option value="">All Topics</option>
+              {topics.map((topic) => (
+                <option key={topic._id} value={topic._id}>{topic.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={styles.label}>Sort</label>
+            <div style={{ position: 'relative' }}>
+              <FaSortAmountDown style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                style={{ ...styles.input, paddingLeft: '36px' }}
+              >
+                <option value="latest">Latest</option>
+                <option value="mostAnswered">Most answered</option>
+                <option value="mostLiked">Most liked</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {(searchText || subjectFilter || topicFilter) && (
+          <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => { setSearchText(''); setSubjectFilter(''); setTopicFilter(''); setSortBy('latest'); }} style={styles.button}>
+              Clear Filters
+            </button>
+          </div>
+        )}
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
         <h1>Q&A Forum</h1>
         <button onClick={() => setShowForm(!showForm)}>
@@ -277,16 +552,38 @@ const Questions = () => {
             <input
               type="text"
               value={formData.title}
-              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              onChange={(e) => {
+                const rawTitle = e.target.value;
+                const cleanedTitle = sanitizeToEnglishLettersAndNumbers(e.target.value);
+                setFormData({ ...formData, title: cleanedTitle });
+                setFormErrors((prev) => ({
+                  ...prev,
+                  title: rawTitle !== cleanedTitle
+                    ? 'Only English letters and numbers are allowed.'
+                    : ''
+                }));
+              }}
+              onBlur={() => {
+                setFormErrors((prev) => ({
+                  ...prev,
+                  title: formData.title.trim() ? '' : 'Title is required.'
+                }));
+              }}
               required
               style={styles.input}
             />
+            {formErrors.title && (
+              <p style={{ marginTop: '-8px', marginBottom: '10px', color: '#dc2626', fontSize: '0.9rem' }}>
+                {formErrors.title}
+              </p>
+            )}
 
             <label style={styles.label}>Question</label>
             <textarea
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
-              required
+              onChange={(e) => {
+                setFormData({ ...formData, description: e.target.value });
+              }}
               rows="5"
               style={{ ...styles.input, height: '120px' }}
             />
@@ -329,11 +626,12 @@ const Questions = () => {
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: '15px' }}>
-        {questions && questions.map(question => (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '15px' }}>
+        {questions && questions.map((question, index) => (
           <div
             key={question._id}
-            style={{ ...styles.card, cursor: 'pointer' }}
+            className="qa-post-card"
+            style={{ ...styles.card, cursor: 'pointer', animationDelay: `${Math.min(index * 55, 420)}ms` }}
             onClick={() => openQuestion(question._id)}
           >
             <div>
@@ -342,7 +640,11 @@ const Questions = () => {
                 <img
                   src={getImageUrl(question.imageUrl)}
                   alt="Question"
-                  style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '6px', marginBottom: '10px' }}
+                  style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', background: '#f7f7fb', borderRadius: '6px', marginBottom: '10px' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openImageViewer(getImageUrl(question.imageUrl));
+                  }}
                 />
               )}
               <p>
@@ -350,9 +652,9 @@ const Questions = () => {
                   ? `${question.description.substring(0, 150)}...`
                   : question.description}
               </p>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <span style={{ ...styles.badge, ...(question.status === 'answered' ? styles.badgeSuccess : styles.badgePrimary) }}>
-                  {question.status}
+              <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <span style={{ ...styles.badge, ...(question.resolved ? styles.badgeSuccess : styles.badgePrimary) }}>
+                  {getStatusLabel(question)}
                 </span>
                 <span style={{ ...styles.badge, ...styles.badgePrimary }}>
                   👤 {question.asker?.name || 'Unknown'}
@@ -361,9 +663,29 @@ const Questions = () => {
                   👁️ {question.views} views
                 </span>
                 <span style={{ ...styles.badge, ...styles.badgePrimary }}>
-                  🏷️ {question.questionType}
+                  💬 {question.answerCount || 0} answers
+                </span>
+                <span style={{ ...styles.badge, ...styles.badgePrimary }}>
+                  👍 {question.totalHelpfulCount || 0} likes
                 </span>
               </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                {question.subject?.name && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setSubjectFilter(question.subject._id); setTopicFilter(''); }} style={{ ...styles.button, padding: '6px 10px' }}>
+                    {question.subject.name}
+                  </button>
+                )}
+                {question.topic?.name && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setSubjectFilter(question.subject?._id || ''); setTopicFilter(question.topic._id); }} style={{ ...styles.button, padding: '6px 10px' }}>
+                    #{question.topic.name}
+                  </button>
+                )}
+              </div>
+
+              <p style={{ marginTop: '10px', marginBottom: 0, color: '#64748b', fontSize: '13px' }}>
+                Posted {getTimeLabel(question.createdAt)} by {question.asker?.name || 'Unknown'}
+              </p>
             </div>
           </div>
         ))}
@@ -429,7 +751,8 @@ const Questions = () => {
                 <img
                   src={getImageUrl(selectedQuestion.imageUrl)}
                   alt="Question"
-                  style={{ width: '100%', maxHeight: '320px', objectFit: 'cover', borderRadius: '6px', marginTop: '10px' }}
+                  style={{ width: '100%', maxHeight: '420px', objectFit: 'contain', background: '#f7f7fb', borderRadius: '6px', marginTop: '10px', cursor: 'zoom-in' }}
+                  onClick={() => openImageViewer(getImageUrl(selectedQuestion.imageUrl))}
                 />
               )}
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
@@ -537,8 +860,99 @@ const Questions = () => {
       )}
 
       {questions.length === 0 && (
-        <div style={styles.alertInfo}>
-          No questions yet. Be the first to ask!
+        <div style={{ ...styles.card, textAlign: 'center' }}>
+          <h3 style={{ marginTop: 0 }}>No questions yet</h3>
+          <p style={{ color: 'rgba(11,31,59,0.7)' }}>Start the discussion by asking your first question.</p>
+          <button type="button" onClick={() => setShowForm(true)} style={styles.button}>Ask First Question</button>
+        </div>
+      )}
+
+      {imageViewer.isOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={closeImageViewer}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(1100px, 100%)',
+              maxHeight: '90vh',
+              background: '#0f1220',
+              borderRadius: '10px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                padding: '10px 12px',
+                background: 'rgba(255,255,255,0.06)',
+                borderBottom: '1px solid rgba(255,255,255,0.08)'
+              }}
+            >
+              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '14px' }}>
+                Zoom: {Math.round((imageViewer.zoom || 1) * 100)}%
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => zoomImageViewer(-0.2)}>
+                  -
+                </button>
+                <button type="button" onClick={() => setImageViewer((prev) => ({ ...prev, zoom: 1 }))}>
+                  Reset
+                </button>
+                <button type="button" onClick={() => zoomImageViewer(0.2)}>
+                  +
+                </button>
+                <button type="button" onClick={closeImageViewer}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div
+              onWheel={handleViewerWheel}
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'auto',
+                padding: '18px'
+              }}
+            >
+              <img
+                src={imageViewer.src || ''}
+                alt="Full size"
+                draggable={false}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  transform: `scale(${imageViewer.zoom || 1})`,
+                  transformOrigin: 'center center',
+                  transition: 'transform 80ms linear',
+                  background: 'transparent'
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>

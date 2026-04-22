@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authService } from '../services/api';
-import { toast } from 'react-toastify';
 import styles from '../styles/inlineStyles';
+import { showError, showSuccess } from '../utils/alerts';
+import AuthIllustration from '../components/Illustrations/AuthIllustration';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -25,13 +26,13 @@ const Register = () => {
     
     // Validate password length
     if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+      showError('Password must be at least 6 characters');
       return;
     }
 
     // Validate password match
     if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
+      showError('Passwords do not match');
       return;
     }
 
@@ -39,21 +40,43 @@ const Register = () => {
 
     try {
       await authService.register(formData);
-      toast.success('Registration successful! Please login.');
+      showSuccess('Registration successful! Please login.');
       navigate('/login');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      showError(error.response?.data?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px' }}>
-      <div style={styles.card}>
-        <h1 style={{ textAlign: 'center', marginBottom: '30px' }}>Register</h1>
-        <form onSubmit={handleSubmit}>
-          <label style={styles.label}>Full Name</label>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '40px 20px'
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '1100px',
+          display: 'flex',
+          gap: '22px',
+          alignItems: 'stretch',
+          flexWrap: 'wrap'
+        }}
+      >
+        <div style={{ flex: '1 1 420px' }}>
+          <div style={{ ...styles.card, padding: '28px' }}>
+            <h1 style={{ margin: 0, marginBottom: '8px' }}>Create account</h1>
+            <p style={{ margin: 0, color: 'rgba(11,31,59,0.7)', marginBottom: '26px' }}>
+              Join to plan your studies and book tutoring sessions.
+            </p>
+            <form onSubmit={handleSubmit}>
+              <label style={styles.label}>Full Name</label>
           <input
             type="text"
             name="name"
@@ -105,11 +128,63 @@ const Register = () => {
           <button type="submit" disabled={loading} style={{ ...styles.button, width: '100%' }}>
             {loading ? 'Registering...' : 'Register'}
           </button>
-        </form>
+            </form>
 
-        <p style={{ textAlign: 'center', marginTop: '20px' }}>
-          Already have an account? <Link to="/login">Login here</Link>
-        </p>
+            <p style={{ textAlign: 'center', marginTop: '20px', marginBottom: 0 }}>
+              Already have an account?{' '}
+              <Link to="/login" style={{ color: '#1e40af', fontWeight: 700 }}>
+                Log in
+              </Link>
+            </p>
+          </div>
+        </div>
+
+        <div
+          style={{
+            flex: '1 1 360px',
+            minWidth: '280px',
+            borderRadius: '18px',
+            border: '1px solid rgba(255,255,255,0.55)',
+            background: 'linear-gradient(135deg, rgba(11,31,59,0.10) 0%, rgba(30,58,138,0.10) 100%)',
+            boxShadow: '0 20px 60px rgba(2, 6, 23, 0.12)',
+            overflow: 'hidden'
+          }}
+        >
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div
+              style={{
+                padding: '18px 18px 0 18px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontWeight: 800,
+                  color: '#0b1f3b'
+                }}
+              >
+                <span
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '999px',
+                    background: 'linear-gradient(135deg, #1e3a8a, #0b1f3b)'
+                  }}
+                />
+                Build your plan
+              </span>
+            </div>
+            <AuthIllustration />
+            <div style={{ padding: '0 18px 18px 18px', color: 'rgba(11,31,59,0.7)' }}>
+              Navy/white design with smooth SweetAlert2 popups for a cleaner experience.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
