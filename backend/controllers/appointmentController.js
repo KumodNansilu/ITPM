@@ -1,5 +1,6 @@
 const Appointment = require('../models/Appointment');
 const User = require('../models/User');
+const { createNotification } = require('../services/notificationService');
 
 // Create Appointment Request
 exports.createAppointment = async (req, res) => {
@@ -103,6 +104,15 @@ exports.approveAppointment = async (req, res) => {
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
+    await createNotification({
+      recipient: appointment.student,
+      type: 'appointment_approved',
+      title: 'Appointment approved',
+      message: 'Your appointment has been approved.',
+      link: '/appointments',
+      metadata: { appointmentId: String(appointment._id) }
+    });
+
     res.status(200).json({
       message: 'Appointment approved successfully',
       appointment
@@ -130,6 +140,15 @@ exports.rejectAppointment = async (req, res) => {
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
     }
+
+    await createNotification({
+      recipient: appointment.student,
+      type: 'appointment_rejected',
+      title: 'Appointment rejected',
+      message: 'Your appointment has been rejected.',
+      link: '/appointments',
+      metadata: { appointmentId: String(appointment._id) }
+    });
 
     res.status(200).json({
       message: 'Appointment rejected',
