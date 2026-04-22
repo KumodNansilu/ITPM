@@ -63,7 +63,12 @@ export const materialService = {
 
 // Study Plan Services
 export const planService = {
-  createPlan: (data) => api.post('/plans', data),
+  createPlan: (data) => {
+    if (typeof FormData !== 'undefined' && data instanceof FormData) {
+      return api.post('/plans', data);
+    }
+    return api.post('/plans', data);
+  },
   getStudentPlans: () => api.get('/plans'),
   getPlansByDateRange: (startDate, endDate) => 
     api.get('/plans/range', { params: { startDate, endDate } }),
@@ -94,6 +99,7 @@ export const questionService = {
 
 // MCQ Services
 export const mcqService = {
+  getAllMCQs: (params) => api.get('/mcq', { params }),
   createMCQ: (data) => api.post('/mcq', data),
   getMCQsBySubject: (subjectId) => api.get(`/mcq/subject/${subjectId}`),
   getMCQsByTopic: (topicId) => api.get(`/mcq/topic/${topicId}`),
@@ -102,7 +108,37 @@ export const mcqService = {
   deleteMCQ: (id) => api.delete(`/mcq/${id}`),
   submitMCQAnswer: (mcqId, data) => api.post(`/mcq/${mcqId}/submit`, data),
   getUserMCQAttempts: (filters) => api.get('/mcq/attempts/my', { params: filters }),
-  getQuizScore: (params) => api.get('/mcq/score/summary', { params })
+  getQuizScore: (params) => api.get('/mcq/score/summary', { params }),
+  startMockExam: (subjectId, topicId) => api.get('/mcq/exam/start', { params: { subjectId, topicId } }),
+  submitMockExam: (data) => api.post('/mcq/exam/submit', data),
+  getMyMockExamAttempts: () => api.get('/mcq/exam/attempts/my'),
+  getTutorPerformance: (params) => api.get('/mcq/tutor/performance', { params })
+};
+
+// Exam Services (Tutor creates 10-question exams, students attempt them)
+export const examService = {
+  createExam: (data) => api.post('/exams', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getAllExams: (params) => api.get('/exams', { params }),
+  getExamById: (id) => api.get(`/exams/${id}`),
+  getExamQuestions: (id) => api.get(`/exams/${id}/questions`),
+  updateExam: (id, data) => api.put(`/exams/${id}`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  deleteExam: (id) => api.delete(`/exams/${id}`),
+  submitExamAttempt: (examId, data) => api.post(`/exams/${examId}/submit`, data),
+  getMyExamAttempts: () => api.get('/exams/attempts/my')
+};
+
+// Notification Services
+export const notificationService = {
+  getNotifications: () => api.get('/notifications'),
+  getUnreadCount: () => api.get('/notifications/unread/count'),
+  markAsRead: (id) => api.patch(`/notifications/${id}/read`),
+  markAsUnread: (id) => api.patch(`/notifications/${id}/unread`),
+  markAllAsRead: () => api.patch('/notifications/read-all'),
+  deleteNotification: (id) => api.delete(`/notifications/${id}`)
 };
 
 // Appointment Services
@@ -131,6 +167,16 @@ export const appointmentService = {
     api.get('/appointments/my/bookings'),
   cancelBooking: (appointmentId) => 
     api.patch(`/appointments/bookings/${appointmentId}/cancel`),
+  submitSessionFeedback: (appointmentId, data) =>
+    api.patch(`/appointments/bookings/${appointmentId}/feedback`, data),
+  getSessionChatMessages: (sessionId) =>
+    api.get(`/appointments/chat/sessions/${sessionId}/messages`),
+  getSessionChatPresence: (sessionId) =>
+    api.get(`/appointments/chat/sessions/${sessionId}/presence`),
+  editSessionChatMessage: (messageId, data) =>
+    api.patch(`/appointments/chat/messages/${messageId}`, data),
+  deleteSessionChatMessage: (messageId) =>
+    api.delete(`/appointments/chat/messages/${messageId}`),
   
   // Tutor endpoints
   createTutorSession: (data) => 
@@ -149,6 +195,8 @@ export const appointmentService = {
     api.patch(`/appointments/tutor/sessions/${sessionId}/complete`),
   cancelTutorSession: (sessionId) => 
     api.patch(`/appointments/tutor/sessions/${sessionId}/cancel`),
+  deleteTutorSession: (sessionId) =>
+    api.delete(`/appointments/tutor/sessions/${sessionId}`),
   removeStudentFromSession: (sessionId, appointmentId) => 
     api.patch(`/appointments/tutor/sessions/${sessionId}/remove/${appointmentId}`)
 };
