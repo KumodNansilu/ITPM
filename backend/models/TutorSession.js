@@ -39,6 +39,10 @@ const tutorSessionSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  thumbnailUrl: {
+    type: String,
+    default: null
+  },
   description: {
     type: String,
     default: ''
