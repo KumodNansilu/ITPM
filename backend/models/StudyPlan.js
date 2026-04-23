@@ -34,6 +34,10 @@ const studyPlanSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  thumbnailUrl: {
+    type: String,
+    default: ''
+  },
   completedAt: {
     type: Date,
     default: null
