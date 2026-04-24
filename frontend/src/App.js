@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthContext, AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navigation from './components/Navigation';
+import Footer from './components/Footer';
 
 // Pages
 import Login from './pages/Login';
@@ -157,6 +158,7 @@ const AppContent = () => {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </div>
+      <Footer />
     </>
   );
 };
